@@ -1,12 +1,13 @@
 /**
  * Loader for Smart Connections data from .smart-env directory
  */
-import type { SmartSource, SmartEnvConfig } from './types.js';
+import type { SmartSource, SmartBlock, SmartEnvConfig } from './types.js';
 export declare class SmartConnectionsLoader {
     private vaultPath;
     private smartEnvPath;
     private config;
     private sources;
+    private blocks;
     constructor(vaultPath: string);
     /**
      * Initialize and load all Smart Connections data
@@ -28,6 +29,14 @@ export declare class SmartConnectionsLoader {
      * Get a specific source by path
      */
     getSource(notePath: string): SmartSource | undefined;
+    /**
+     * Get all blocks
+     */
+    getBlocks(): Map<string, SmartBlock>;
+    /**
+     * Get a specific block by key
+     */
+    getBlock(blockKey: string): SmartBlock | undefined;
     /**
      * Get configuration
      */

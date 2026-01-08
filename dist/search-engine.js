@@ -2,12 +2,22 @@
  * Semantic search engine for Smart Connections
  */
 import { findNearestNeighbors } from './embedding-utils.js';
+import { QueryEmbedder } from './query-embedder.js';
 export class SearchEngine {
     loader;
     embeddingModelKey;
+    queryEmbedder;
     constructor(loader) {
         this.loader = loader;
         this.embeddingModelKey = loader.getEmbeddingModelKey();
+        // Initialize query embedder with the same model Smart Connections uses
+        this.queryEmbedder = new QueryEmbedder('TaylorAI/bge-micro-v2');
+    }
+    /**
+     * Initialize the query embedder (call this before using searchByQuery)
+     */
+    async initializeEmbedder() {
+        await this.queryEmbedder.initialize();
     }
     /**
      * Find similar notes to a given note path
@@ -114,40 +124,67 @@ export class SearchEngine {
         };
     }
     /**
-     * Search notes by content similarity
+     * Search notes by semantic similarity using embeddings
+     * Searches through both note-level (sources) and block-level embeddings
      */
-    searchByQuery(queryText, limit = 10, threshold = 0.5) {
-        // For now, we'll do a simple keyword match since we don't have
-        // a way to generate embeddings for arbitrary text without the model.
-        // In a full implementation, you'd call the embedding model here.
-        const results = [];
-        const queryLower = queryText.toLowerCase();
-        for (const [path, source] of this.loader.getSources()) {
-            try {
-                const content = this.loader.readNoteContent(path).toLowerCase();
-                // Simple relevance scoring based on keyword matches
-                const matches = (content.match(new RegExp(queryLower, 'gi')) || []).length;
-                if (matches > 0) {
-                    // Normalize score (this is a crude approximation)
-                    const score = Math.min(matches / 10, 1.0);
-                    if (score >= threshold) {
-                        results.push({
-                            path,
-                            similarity: score,
-                            blocks: Object.keys(source.blocks || {})
-                        });
-                    }
+    async searchByQuery(queryText, limit = 10, threshold = 0.5) {
+        // Generate embedding for the query text
+        const queryEmbedding = await this.queryEmbedder.embed(queryText);
+        // Build vector dataset from all blocks (more granular search)
+        const blockVectors = Array.from(this.loader.getBlocks().entries())
+            .map(([key, block]) => {
+            const emb = block.embeddings[this.embeddingModelKey];
+            // Extract the file path from the block key (e.g., "file.md##Heading" -> "file.md")
+            const filePath = key.split('#')[0];
+            return {
+                id: key,
+                vec: emb?.vec || [],
+                metadata: {
+                    filePath,
+                    lines: block.lines,
+                    isBlock: true
                 }
+            };
+        })
+            .filter(item => item.vec.length > 0);
+        // Also include source-level vectors for notes without blocks
+        const sourceVectors = Array.from(this.loader.getSources().entries())
+            .map(([path, src]) => {
+            const emb = src.embeddings[this.embeddingModelKey];
+            return {
+                id: path,
+                vec: emb?.vec || [],
+                metadata: {
+                    filePath: path,
+                    lines: undefined,
+                    isBlock: false,
+                    blocks: Object.keys(src.blocks || {})
+                }
+            };
+        })
+            .filter(item => item.vec.length > 0);
+        // Combine both vectors, prioritizing blocks
+        const allVectors = [...blockVectors, ...sourceVectors];
+        // Find nearest neighbors using cosine similarity
+        const neighbors = findNearestNeighbors(queryEmbedding, allVectors, limit * 2, // Get more results to allow deduplication
+        threshold);
+        // Convert to SimilarNote format
+        const results = neighbors.map(neighbor => {
+            const result = {
+                path: neighbor.metadata.isBlock ? neighbor.id : neighbor.id,
+                similarity: Math.round(neighbor.similarity * 100) / 100,
+                isBlock: neighbor.metadata.isBlock
+            };
+            if (neighbor.metadata.lines) {
+                result.lines = neighbor.metadata.lines;
             }
-            catch (error) {
-                // Skip notes that can't be read
-                continue;
+            if (neighbor.metadata.blocks) {
+                result.blocks = neighbor.metadata.blocks;
             }
-        }
-        // Sort by similarity and limit
-        return results
-            .sort((a, b) => b.similarity - a.similarity)
-            .slice(0, limit);
+            return result;
+        });
+        // Return top results (limit)
+        return results.slice(0, limit);
     }
     /**
      * Get note content with matched blocks highlighted
@@ -167,10 +204,11 @@ export class SearchEngine {
      */
     getStats() {
         const sources = this.loader.getSources();
-        let totalBlocks = 0;
+        const blocks = this.loader.getBlocks();
+        let totalBlocksInSources = 0;
         let embeddingDim = 0;
         for (const source of sources.values()) {
-            totalBlocks += Object.keys(source.blocks || {}).length;
+            totalBlocksInSources += Object.keys(source.blocks || {}).length;
             if (embeddingDim === 0) {
                 const emb = source.embeddings[this.embeddingModelKey];
                 if (emb?.vec) {
@@ -180,7 +218,8 @@ export class SearchEngine {
         }
         return {
             totalNotes: sources.size,
-            totalBlocks,
+            totalBlocks: totalBlocksInSources,
+            totalEmbeddedBlocks: blocks.size,
             embeddingDimension: embeddingDim,
             modelKey: this.embeddingModelKey
         };

@@ -6,7 +6,12 @@ import type { SmartConnectionsLoader } from './smart-connections-loader.js';
 export declare class SearchEngine {
     private loader;
     private embeddingModelKey;
+    private queryEmbedder;
     constructor(loader: SmartConnectionsLoader);
+    /**
+     * Initialize the query embedder (call this before using searchByQuery)
+     */
+    initializeEmbedder(): Promise<void>;
     /**
      * Find similar notes to a given note path
      */
@@ -20,9 +25,10 @@ export declare class SearchEngine {
      */
     getConnectionGraph(notePath: string, depth?: number, threshold?: number, maxPerLevel?: number): ConnectionGraph;
     /**
-     * Search notes by content similarity
+     * Search notes by semantic similarity using embeddings
+     * Searches through both note-level (sources) and block-level embeddings
      */
-    searchByQuery(queryText: string, limit?: number, threshold?: number): SimilarNote[];
+    searchByQuery(queryText: string, limit?: number, threshold?: number): Promise<SimilarNote[]>;
     /**
      * Get note content with matched blocks highlighted
      */
@@ -33,6 +39,7 @@ export declare class SearchEngine {
     getStats(): {
         totalNotes: number;
         totalBlocks: number;
+        totalEmbeddedBlocks: number;
         embeddingDimension: number;
         modelKey: string;
     };

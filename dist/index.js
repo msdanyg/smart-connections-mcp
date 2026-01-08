@@ -24,6 +24,9 @@ const loader = new SmartConnectionsLoader(VAULT_PATH);
 await loader.initialize();
 // Create search engine after loader is initialized
 const searchEngine = new SearchEngine(loader);
+// Initialize the embedding model for semantic search queries
+console.error('Loading embedding model for semantic search...');
+await searchEngine.initializeEmbedder();
 console.error('Smart Connections MCP Server initialized successfully');
 console.error(`Vault: ${VAULT_PATH}`);
 console.error(`Loaded ${loader.getSources().size} notes`);
@@ -243,7 +246,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             case 'search_notes': {
                 const { query, limit, threshold } = SearchNotesSchema.parse(args);
-                const results = searchEngine.searchByQuery(query, limit, threshold);
+                const results = await searchEngine.searchByQuery(query, limit, threshold);
                 return {
                     content: [
                         {

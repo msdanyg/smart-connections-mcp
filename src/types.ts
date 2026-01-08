@@ -29,6 +29,28 @@ export interface SmartSource {
   };
 }
 
+export interface SmartBlock {
+  key: string; // e.g., "file.md##Heading" or "file.md##{1}"
+  path: string | null;
+  embeddings: {
+    [modelKey: string]: {
+      vec: number[];
+      last_embed: {
+        hash: string;
+        tokens: number;
+      };
+    };
+  };
+  lines: [number, number]; // [start_line, end_line]
+  size: number;
+  class_name: string;
+  outlinks?: Array<{
+    title: string;
+    target: string;
+    line: number;
+  }>;
+}
+
 export interface SmartEnvConfig {
   is_obsidian_vault: boolean;
   smart_blocks: {
@@ -60,6 +82,8 @@ export interface SimilarNote {
   similarity: number;
   blocks?: string[];
   matchedContent?: string;
+  lines?: [number, number]; // [start_line, end_line] for block-level results
+  isBlock?: boolean; // true if this is a block result, false/undefined for note-level
 }
 
 export interface ConnectionNode {

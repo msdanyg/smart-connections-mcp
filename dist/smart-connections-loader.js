@@ -8,6 +8,7 @@ export class SmartConnectionsLoader {
     smartEnvPath;
     config = null;
     sources = new Map();
+    blocks = new Map();
     constructor(vaultPath) {
         this.vaultPath = vaultPath;
         this.smartEnvPath = path.join(vaultPath, '.smart-env');
@@ -64,12 +65,23 @@ export class SmartConnectionsLoader {
                         const obj = JSON.parse(`{${cleanedLine}}`);
                         // Process all key-value pairs in the object
                         for (const key of Object.keys(obj)) {
-                            // Only process smart_sources entries (not smart_blocks)
+                            // Process smart_sources entries
                             if (key.startsWith('smart_sources:')) {
                                 const sourceData = obj[key];
                                 // Skip entries with null/undefined paths
                                 if (sourceData && sourceData.path) {
                                     this.sources.set(sourceData.path, sourceData);
+                                }
+                            }
+                            // Process smart_blocks entries
+                            else if (key.startsWith('smart_blocks:')) {
+                                const blockData = obj[key];
+                                // Use the key after "smart_blocks:" as the block key
+                                const blockKey = key.replace('smart_blocks:', '');
+                                if (blockData && blockData.embeddings) {
+                                    // Store with the full key (path#heading)
+                                    blockData.key = blockKey;
+                                    this.blocks.set(blockKey, blockData);
                                 }
                             }
                         }
@@ -84,7 +96,7 @@ export class SmartConnectionsLoader {
                 console.error(`Error loading ${file}:`, error);
             }
         }
-        console.error(`Loaded ${this.sources.size} sources successfully`);
+        console.error(`Loaded ${this.sources.size} sources and ${this.blocks.size} blocks successfully`);
     }
     /**
      * Get all sources
@@ -97,6 +109,18 @@ export class SmartConnectionsLoader {
      */
     getSource(notePath) {
         return this.sources.get(notePath);
+    }
+    /**
+     * Get all blocks
+     */
+    getBlocks() {
+        return this.blocks;
+    }
+    /**
+     * Get a specific block by key
+     */
+    getBlock(blockKey) {
+        return this.blocks.get(blockKey);
     }
     /**
      * Get configuration

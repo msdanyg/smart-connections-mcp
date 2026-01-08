@@ -4,13 +4,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { SmartSource, SmartEnvConfig } from './types.js';
+import type { SmartSource, SmartBlock, SmartEnvConfig } from './types.js';
 
 export class SmartConnectionsLoader {
   private vaultPath: string;
   private smartEnvPath: string;
   private config: SmartEnvConfig | null = null;
   private sources: Map<string, SmartSource> = new Map();
+  private blocks: Map<string, SmartBlock> = new Map();
 
   constructor(vaultPath: string) {
     this.vaultPath = vaultPath;
@@ -82,12 +83,23 @@ export class SmartConnectionsLoader {
 
             // Process all key-value pairs in the object
             for (const key of Object.keys(obj)) {
-              // Only process smart_sources entries (not smart_blocks)
+              // Process smart_sources entries
               if (key.startsWith('smart_sources:')) {
                 const sourceData: SmartSource = obj[key];
                 // Skip entries with null/undefined paths
                 if (sourceData && sourceData.path) {
                   this.sources.set(sourceData.path, sourceData);
+                }
+              }
+              // Process smart_blocks entries
+              else if (key.startsWith('smart_blocks:')) {
+                const blockData: SmartBlock = obj[key];
+                // Use the key after "smart_blocks:" as the block key
+                const blockKey = key.replace('smart_blocks:', '');
+                if (blockData && blockData.embeddings) {
+                  // Store with the full key (path#heading)
+                  blockData.key = blockKey;
+                  this.blocks.set(blockKey, blockData);
                 }
               }
             }
@@ -101,7 +113,7 @@ export class SmartConnectionsLoader {
       }
     }
 
-    console.error(`Loaded ${this.sources.size} sources successfully`);
+    console.error(`Loaded ${this.sources.size} sources and ${this.blocks.size} blocks successfully`);
   }
 
   /**
@@ -116,6 +128,20 @@ export class SmartConnectionsLoader {
    */
   getSource(notePath: string): SmartSource | undefined {
     return this.sources.get(notePath);
+  }
+
+  /**
+   * Get all blocks
+   */
+  getBlocks(): Map<string, SmartBlock> {
+    return this.blocks;
+  }
+
+  /**
+   * Get a specific block by key
+   */
+  getBlock(blockKey: string): SmartBlock | undefined {
+    return this.blocks.get(blockKey);
   }
 
   /**
