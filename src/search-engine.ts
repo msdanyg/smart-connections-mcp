@@ -5,14 +5,17 @@
 import type { SmartSource, SimilarNote, ConnectionNode, ConnectionGraph, NoteContent } from './types.js';
 import { cosineSimilarity, findNearestNeighbors } from './embedding-utils.js';
 import type { SmartConnectionsLoader } from './smart-connections-loader.js';
+import type { GteEmbedder } from './gte-embedder.js';
 
 export class SearchEngine {
   private loader: SmartConnectionsLoader;
   private embeddingModelKey: string;
+  private gteEmbedder: GteEmbedder | null = null;
 
-  constructor(loader: SmartConnectionsLoader) {
+  constructor(loader: SmartConnectionsLoader, gteEmbedder?: GteEmbedder) {
     this.loader = loader;
     this.embeddingModelKey = loader.getEmbeddingModelKey();
+    this.gteEmbedder = gteEmbedder || null;
   }
 
   /**
@@ -172,31 +175,56 @@ export class SearchEngine {
   }
 
   /**
-   * Search notes by content similarity
+   * Search notes by semantic similarity using GTE-base embeddings.
+   * Falls back to keyword search if GTE embedder is not available.
    */
-  searchByQuery(
+  async searchByQuery(
     queryText: string,
     limit: number = 10,
-    threshold: number = 0.5
-  ): SimilarNote[] {
-    // For now, we'll do a simple keyword match since we don't have
-    // a way to generate embeddings for arbitrary text without the model.
-    // In a full implementation, you'd call the embedding model here.
+    threshold: number = 0.3
+  ): Promise<SimilarNote[]> {
+    // Use GTE-base semantic search if available (block-level)
+    if (this.gteEmbedder) {
+      const gteResults = await this.gteEmbedder.search(queryText, limit * 3, threshold);
 
+      // Group by note, keep best block per note, but include matched block info
+      const noteMap = new Map<string, { path: string; similarity: number; matchedBlock: string; matchedBlockType: string; blocks: string[] }>();
+      for (const r of gteResults) {
+        const existing = noteMap.get(r.path);
+        if (!existing || r.similarity > existing.similarity) {
+          const source = this.loader.getSource(r.path);
+          noteMap.set(r.path, {
+            path: r.path,
+            similarity: r.similarity,
+            matchedBlock: r.block,
+            matchedBlockType: r.blockType,
+            blocks: source ? Object.keys(source.blocks || {}) : [],
+          });
+        }
+      }
+
+      return Array.from(noteMap.values())
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, limit)
+        .map(r => ({
+          path: r.path,
+          similarity: r.similarity,
+          blocks: r.blocks,
+          matchedContent: `[${r.matchedBlockType}] ${r.matchedBlock}`,
+        }));
+    }
+
+    // Fallback: keyword search
     const results: SimilarNote[] = [];
     const queryLower = queryText.toLowerCase();
 
     for (const [path, source] of this.loader.getSources()) {
       try {
         const content = this.loader.readNoteContent(path).toLowerCase();
-
-        // Simple relevance scoring based on keyword matches
         const matches = (content.match(new RegExp(queryLower, 'gi')) || []).length;
 
         if (matches > 0) {
-          // Normalize score (this is a crude approximation)
           const score = Math.min(matches / 10, 1.0);
-
           if (score >= threshold) {
             results.push({
               path,
@@ -206,12 +234,10 @@ export class SearchEngine {
           }
         }
       } catch (error) {
-        // Skip notes that can't be read
         continue;
       }
     }
 
-    // Sort by similarity and limit
     return results
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);

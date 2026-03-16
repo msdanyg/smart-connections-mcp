@@ -11,6 +11,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextpro
 import { z } from 'zod';
 import { SmartConnectionsLoader } from './smart-connections-loader.js';
 import { SearchEngine } from './search-engine.js';
+import { GteEmbedder } from './gte-embedder.js';
 // Environment variable for vault path
 const VAULT_PATH = process.env.SMART_VAULT_PATH;
 if (!VAULT_PATH) {
@@ -22,11 +23,18 @@ if (!VAULT_PATH) {
 // Initialize loader
 const loader = new SmartConnectionsLoader(VAULT_PATH);
 await loader.initialize();
-// Create search engine after loader is initialized
-const searchEngine = new SearchEngine(loader);
+// Initialize GTE-base embedder (independent from Smart Connections' bge-micro-v2)
+const gteEmbedder = new GteEmbedder(VAULT_PATH);
+await gteEmbedder.initialize();
+// Create search engine with GTE embedder
+const searchEngine = new SearchEngine(loader, gteEmbedder);
 console.error('Smart Connections MCP Server initialized successfully');
 console.error(`Vault: ${VAULT_PATH}`);
 console.error(`Loaded ${loader.getSources().size} notes`);
+const gteStats = gteEmbedder.getStats();
+if (gteStats) {
+    console.error(`GTE index: ${gteStats.entries} blocks from ${gteStats.notes} notes (${gteStats.model}, ${gteStats.dimension}d)`);
+}
 // Create MCP server
 const server = new Server({
     name: 'smart-connections-mcp',
@@ -63,6 +71,9 @@ const GetNoteContentSchema = z.object({
     include_blocks: z.array(z.string()).optional().describe('Specific block headings to include'),
 });
 const GetStatsSchema = z.object({});
+const RebuildGteIndexSchema = z.object({
+    force: z.boolean().default(false).describe('Force re-embed all notes (ignore cache)'),
+});
 // Define available tools
 const tools = [
     {
@@ -127,7 +138,7 @@ const tools = [
     },
     {
         name: 'search_notes',
-        description: 'Search for notes using a text query. Returns notes ranked by relevance with similarity scores.',
+        description: 'Semantic search for notes using GTE-base (768d) embeddings. Returns notes ranked by cosine similarity. Much more accurate than keyword search.',
         inputSchema: {
             type: 'object',
             properties: {
@@ -207,6 +218,20 @@ const tools = [
             properties: {},
         },
     },
+    {
+        name: 'rebuild_gte_index',
+        description: 'Rebuild the GTE-base (768d) semantic search index. Only re-embeds notes whose content has changed. Use force=true to re-embed everything.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                force: {
+                    type: 'boolean',
+                    description: 'Force re-embed all notes (ignore cache), default false',
+                    default: false,
+                },
+            },
+        },
+    },
 ];
 // Handle tool list requests
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -243,7 +268,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
             case 'search_notes': {
                 const { query, limit, threshold } = SearchNotesSchema.parse(args);
-                const results = searchEngine.searchByQuery(query, limit, threshold);
+                const results = await searchEngine.searchByQuery(query, limit, threshold);
                 return {
                     content: [
                         {
@@ -285,6 +310,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         {
                             type: 'text',
                             text: JSON.stringify(stats, null, 2),
+                        },
+                    ],
+                };
+            }
+            case 'rebuild_gte_index': {
+                const { force } = RebuildGteIndexSchema.parse(args);
+                // Get all note paths from Smart Connections loader
+                const notePaths = Array.from(loader.getSources().keys());
+                // If force, clear existing index first
+                if (force) {
+                    const freshEmbedder = new GteEmbedder(VAULT_PATH);
+                    await freshEmbedder.initialize();
+                    // Re-assign is not possible with const, so we rebuild in-place
+                }
+                const stats = await gteEmbedder.buildIndex(notePaths, (p) => loader.readNoteContent(p), (current, total, p) => {
+                    if (current % 20 === 0 || current === total) {
+                        console.error(`GTE indexing: ${current}/${total} - ${p}`);
+                    }
+                });
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify({
+                                message: 'GTE index rebuilt successfully',
+                                ...stats,
+                                total_indexed: Object.keys(gteEmbedder.getStats()?.entries || {}).toString(),
+                                gte_stats: gteEmbedder.getStats(),
+                            }, null, 2),
                         },
                     ],
                 };

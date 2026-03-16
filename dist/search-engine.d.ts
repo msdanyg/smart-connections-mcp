@@ -3,10 +3,12 @@
  */
 import type { SimilarNote, ConnectionGraph, NoteContent } from './types.js';
 import type { SmartConnectionsLoader } from './smart-connections-loader.js';
+import type { GteEmbedder } from './gte-embedder.js';
 export declare class SearchEngine {
     private loader;
     private embeddingModelKey;
-    constructor(loader: SmartConnectionsLoader);
+    private gteEmbedder;
+    constructor(loader: SmartConnectionsLoader, gteEmbedder?: GteEmbedder);
     /**
      * Find similar notes to a given note path
      */
@@ -20,9 +22,10 @@ export declare class SearchEngine {
      */
     getConnectionGraph(notePath: string, depth?: number, threshold?: number, maxPerLevel?: number): ConnectionGraph;
     /**
-     * Search notes by content similarity
+     * Search notes by semantic similarity using GTE-base embeddings.
+     * Falls back to keyword search if GTE embedder is not available.
      */
-    searchByQuery(queryText: string, limit?: number, threshold?: number): SimilarNote[];
+    searchByQuery(queryText: string, limit?: number, threshold?: number): Promise<SimilarNote[]>;
     /**
      * Get note content with matched blocks highlighted
      */
