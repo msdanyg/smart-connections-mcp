@@ -1,8 +1,15 @@
 /**
- * GTE-base embedding module for high-quality semantic search.
+ * Embedding module for high-quality semantic search.
  *
- * Uses Xenova/gte-base (768-dim) via @xenova/transformers ONNX runtime.
- * Independent from Smart Connections' bge-micro-v2 (384-dim) embeddings.
+ * Uses onnx-community/embeddinggemma-300m-ONNX (768-dim) via @huggingface/transformers v4 ONNX runtime.
+ * Migrated 2026-04-17: replaces Xenova/gte-base after A/B benchmark showed 2.3x better
+ * top-5 relevance (3.9x on Korean queries) due to GTE-base anisotropic collapse on Korean.
+ *
+ * EmbeddingGemma requires task-specific prefixes (asymmetric):
+ *   query:    "task: search result | query: " + text
+ *   document: "title: none | text: " + text
+ *
+ * Class name GteEmbedder is kept for backwards compatibility with downstream code.
  *
  * Block splitting strategy (based on actual Vault note analysis):
  * 1. SYNC blocks → atomic, never split
@@ -19,16 +26,20 @@ export declare class GteEmbedder {
     private ready;
     constructor(vaultPath: string);
     initialize(): Promise<void>;
+    private modelLoadPromise;
+    private ensureModelLoaded;
     private loadIndex;
     private createEmptyIndex;
     private saveIndex;
     /**
      * Embed a single text string.
-     * GTE-base max_seq_length = 512 tokens. Model truncates internally.
+     * EmbeddingGemma max_seq_length = 2048 tokens. Model truncates internally.
+     * isQuery=true uses asymmetric query prefix; false (default) uses document prefix.
      */
-    embed(text: string): Promise<number[]>;
+    embed(text: string, isQuery?: boolean): Promise<number[]>;
     /**
-     * Embed multiple texts in batches for ~1.5x speedup on M4 Pro.
+     * Embed multiple document texts in batches.
+     * Batch size 8 is a memory/throughput sweet spot for 300M model on M4 Pro (q8).
      */
     embedBatch(texts: string[], batchSize?: number): Promise<number[][]>;
     /**

@@ -1,8 +1,15 @@
 /**
- * GTE-base embedding module for high-quality semantic search.
+ * Embedding module for high-quality semantic search.
  *
- * Uses Xenova/gte-base (768-dim) via @xenova/transformers ONNX runtime.
- * Independent from Smart Connections' bge-micro-v2 (384-dim) embeddings.
+ * Uses onnx-community/embeddinggemma-300m-ONNX (768-dim) via @huggingface/transformers v4 ONNX runtime.
+ * Migrated 2026-04-17: replaces Xenova/gte-base after A/B benchmark showed 2.3x better
+ * top-5 relevance (3.9x on Korean queries) due to GTE-base anisotropic collapse on Korean.
+ *
+ * EmbeddingGemma requires task-specific prefixes (asymmetric):
+ *   query:    "task: search result | query: " + text
+ *   document: "title: none | text: " + text
+ *
+ * Class name GteEmbedder is kept for backwards compatibility with downstream code.
  *
  * Block splitting strategy (based on actual Vault note analysis):
  * 1. SYNC blocks → atomic, never split
@@ -16,12 +23,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-let pipeline: any;
-let extractor: any;
+let AutoTokenizer: any;
+let AutoModel: any;
+let tokenizer: any;
+let model: any;
 
-const GTE_MODEL = 'Xenova/gte-base';
+const GTE_MODEL = 'onnx-community/embeddinggemma-300m-ONNX';
 const GTE_DIM = 768;
-const INDEX_FILENAME = 'gte-index.json';
+const INDEX_FILENAME = 'embedding-index.json';
+const QUERY_PREFIX = 'task: search result | query: ';
+const DOC_PREFIX = 'title: none | text: ';
+
+function l2normalize(v: number[]): number[] {
+  let s = 0;
+  for (const x of v) s += x * x;
+  const n = Math.sqrt(s);
+  if (n === 0) return v;
+  const out = new Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] / n;
+  return out;
+}
 
 // --- Types ---
 
@@ -374,18 +395,34 @@ export class GteEmbedder {
   }
 
   async initialize(): Promise<void> {
-    console.error('Loading GTE-base model (first run downloads ~250MB)...');
-
-    const transformers = await import('@xenova/transformers');
-    pipeline = transformers.pipeline;
-
-    extractor = await pipeline('feature-extraction', GTE_MODEL, {
-      quantized: true,
-    });
-
-    console.error('GTE-base model loaded successfully');
+    // Fast path: load index only. Model is lazy-loaded on first embed() call
+    // to avoid MCP init timeout (EmbeddingGemma download/warmup can exceed the harness timeout).
     this.loadIndex();
     this.ready = true;
+  }
+
+  private modelLoadPromise: Promise<void> | null = null;
+
+  private async ensureModelLoaded(): Promise<void> {
+    if (model && tokenizer) return;
+    if (this.modelLoadPromise) return this.modelLoadPromise;
+
+    this.modelLoadPromise = (async () => {
+      console.error('Loading EmbeddingGemma-300m model (first run downloads ~150MB)...');
+      const transformers = await import('@huggingface/transformers');
+      AutoTokenizer = transformers.AutoTokenizer;
+      AutoModel = transformers.AutoModel;
+      tokenizer = await AutoTokenizer.from_pretrained(GTE_MODEL);
+      model = await AutoModel.from_pretrained(GTE_MODEL, { dtype: 'q8' });
+      console.error('EmbeddingGemma-300m model loaded successfully');
+    })();
+
+    try {
+      await this.modelLoadPromise;
+    } catch (e) {
+      this.modelLoadPromise = null;
+      throw e;
+    }
   }
 
   private loadIndex(): void {
@@ -394,15 +431,16 @@ export class GteEmbedder {
         const data = fs.readFileSync(this.indexPath, 'utf-8');
         const parsed = JSON.parse(data);
 
-        if (!parsed.version || parsed.version < 3) {
-          console.error(`GTE index v${parsed.version || 1} detected, rebuilding with v3 (adaptive block splitting)`);
+        // Version 4+ = EmbeddingGemma. Version 3 = old GTE-base (incompatible vectors).
+        if (!parsed.version || parsed.version < 4 || parsed.model !== GTE_MODEL) {
+          console.error(`Index v${parsed.version || 1} (model=${parsed.model || 'unknown'}) detected, rebuilding with v4 EmbeddingGemma`);
           this.createEmptyIndex();
           return;
         }
 
         this.index = parsed;
         const count = Object.keys(this.index!.entries).length;
-        console.error(`GTE index loaded: ${count} entries (v3, adaptive blocks)`);
+        console.error(`Embedding index loaded: ${count} entries (v4, EmbeddingGemma-300m)`);
       } catch (error) {
         console.error('Failed to load GTE index, creating new:', error);
         this.createEmptyIndex();
@@ -416,7 +454,7 @@ export class GteEmbedder {
     this.index = {
       model: GTE_MODEL,
       dimension: GTE_DIM,
-      version: 3,
+      version: 4,
       created_at: Date.now(),
       updated_at: Date.now(),
       entries: {},
@@ -431,27 +469,34 @@ export class GteEmbedder {
 
   /**
    * Embed a single text string.
-   * GTE-base max_seq_length = 512 tokens. Model truncates internally.
+   * EmbeddingGemma max_seq_length = 2048 tokens. Model truncates internally.
+   * isQuery=true uses asymmetric query prefix; false (default) uses document prefix.
    */
-  async embed(text: string): Promise<number[]> {
-    if (!extractor) throw new Error('GTE model not initialized');
-    const output = await extractor(text, { pooling: 'mean', normalize: true });
-    return Array.from(output.data);
+  async embed(text: string, isQuery: boolean = false): Promise<number[]> {
+    await this.ensureModelLoaded();
+    const prefix = isQuery ? QUERY_PREFIX : DOC_PREFIX;
+    const inputs = await tokenizer([prefix + text], { padding: true, truncation: true, max_length: 2048 });
+    const { sentence_embedding } = await model(inputs);
+    const vec = Array.from(sentence_embedding.data.slice(0, GTE_DIM)) as number[];
+    return l2normalize(vec);
   }
 
   /**
-   * Embed multiple texts in batches for ~1.5x speedup on M4 Pro.
+   * Embed multiple document texts in batches.
+   * Batch size 8 is a memory/throughput sweet spot for 300M model on M4 Pro (q8).
    */
-  async embedBatch(texts: string[], batchSize: number = 10): Promise<number[][]> {
-    if (!extractor) throw new Error('GTE model not initialized');
+  async embedBatch(texts: string[], batchSize: number = 8): Promise<number[][]> {
+    await this.ensureModelLoaded();
     const allVecs: number[][] = [];
 
     for (let start = 0; start < texts.length; start += batchSize) {
-      const batch = texts.slice(start, start + batchSize);
-      const output = await extractor(batch, { pooling: 'mean', normalize: true });
+      const batch = texts.slice(start, start + batchSize).map(t => DOC_PREFIX + t);
+      const inputs = await tokenizer(batch, { padding: true, truncation: true, max_length: 2048 });
+      const { sentence_embedding } = await model(inputs);
 
       for (let i = 0; i < batch.length; i++) {
-        allVecs.push(Array.from(output.data.slice(i * GTE_DIM, (i + 1) * GTE_DIM)));
+        const raw = Array.from(sentence_embedding.data.slice(i * GTE_DIM, (i + 1) * GTE_DIM)) as number[];
+        allVecs.push(l2normalize(raw));
       }
     }
 
@@ -586,10 +631,10 @@ export class GteEmbedder {
     threshold: number = 0.3
   ): Promise<Array<{ path: string; block: string; blockType: string; similarity: number }>> {
     if (!this.ready || !this.index) {
-      throw new Error('GTE embedder not initialized');
+      throw new Error('EmbeddingGemma embedder not initialized');
     }
 
-    const queryVec = await this.embed(queryText);
+    const queryVec = await this.embed(queryText, true);
     const results: Array<{ path: string; block: string; blockType: string; similarity: number }> = [];
 
     for (const entry of Object.values(this.index.entries)) {
@@ -621,10 +666,10 @@ export class GteEmbedder {
     threshold: number = 0.3
   ): Promise<Array<{ path: string; similarity: number }>> {
     if (!this.ready || !this.index) {
-      throw new Error('GTE embedder not initialized');
+      throw new Error('EmbeddingGemma embedder not initialized');
     }
 
-    const queryVec = await this.embed(queryText);
+    const queryVec = await this.embed(queryText, true);
     const results: Array<{ path: string; similarity: number }> = [];
 
     for (const entry of Object.values(this.index.entries)) {

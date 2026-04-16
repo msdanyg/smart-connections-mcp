@@ -23,12 +23,13 @@ if (!VAULT_PATH) {
 // Initialize loader
 const loader = new SmartConnectionsLoader(VAULT_PATH);
 await loader.initialize();
-// Initialize GTE-base embedder (independent from Smart Connections' bge-micro-v2)
+// Initialize EmbeddingGemma embedder (index only — model is lazy-loaded on first embed()
+// to keep MCP init under the harness timeout; first tool call pays the ~150MB cold-start cost).
 const gteEmbedder = new GteEmbedder(VAULT_PATH);
 await gteEmbedder.initialize();
-// Create search engine with GTE embedder
+// Create search engine with EmbeddingGemma embedder
 const searchEngine = new SearchEngine(loader, gteEmbedder);
-console.error('Smart Connections MCP Server initialized successfully');
+console.error('Smart Connections MCP Server initialized successfully (model: lazy)');
 console.error(`Vault: ${VAULT_PATH}`);
 console.error(`Loaded ${loader.getSources().size} notes`);
 const gteStats = gteEmbedder.getStats();
