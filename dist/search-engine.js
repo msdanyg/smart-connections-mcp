@@ -188,7 +188,22 @@ export class SearchEngine {
         };
     }
     /**
-     * Get statistics about the knowledge base
+     * Get statistics about the knowledge base.
+     *
+     * The MCP hosts two independent embedding indexes:
+     * - **legacy**: original Obsidian Smart Connections plugin index
+     *   (read from `.smart-env/multi/*.ajson`, typically bge-micro-v2 384d).
+     *   Reported via `totalBlocks` / `embeddingDimension` / `modelKey`.
+     * - **gte**: this MCP's custom block-level semantic index
+     *   (read from `.smart-env/embedding-index.json`, currently
+     *   EmbeddingGemma-300m 768d). Reported under `gte`.
+     *
+     * `search_notes` prefers the gte index when available (see `searchByQuery`),
+     * falling back to keyword search if absent. Callers that care about the
+     * actual query backend should consult `primary`.
+     *
+     * Top-level fields are preserved for backward compatibility with earlier
+     * clients that only expected the legacy fields.
      */
     getStats() {
         const sources = this.loader.getSources();
@@ -203,11 +218,19 @@ export class SearchEngine {
                 }
             }
         }
+        const gteStats = this.gteEmbedder?.getStats() ?? null;
         return {
             totalNotes: sources.size,
             totalBlocks,
             embeddingDimension: embeddingDim,
-            modelKey: this.embeddingModelKey
+            modelKey: this.embeddingModelKey,
+            legacy: {
+                modelKey: this.embeddingModelKey,
+                embeddingDimension: embeddingDim,
+                totalBlocks,
+            },
+            gte: gteStats,
+            primary: gteStats ? 'gte' : 'legacy',
         };
     }
 }
