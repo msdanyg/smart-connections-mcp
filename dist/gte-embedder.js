@@ -395,6 +395,14 @@ export class GteEmbedder {
             entries: {},
         };
     }
+    /**
+     * Clear in-memory index for force-rebuild. Persisted file is overwritten
+     * on next saveIndex(). In-place mutation preserves references held by
+     * SearchEngine / other consumers.
+     */
+    clearIndex() {
+        this.createEmptyIndex();
+    }
     saveIndex() {
         if (!this.index)
             return;

@@ -354,11 +354,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Get all note paths from Smart Connections loader
         const notePaths = Array.from(loader.getSources().keys());
 
-        // If force, clear existing index first
+        // If force, clear in-memory index so buildIndex() re-embeds every note.
+        // In-place mutation preserves the reference held by searchEngine.
         if (force) {
-          const freshEmbedder = new GteEmbedder(VAULT_PATH);
-          await freshEmbedder.initialize();
-          // Re-assign is not possible with const, so we rebuild in-place
+          gteEmbedder.clearIndex();
         }
 
         const stats = await gteEmbedder.buildIndex(

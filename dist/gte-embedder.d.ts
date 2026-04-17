@@ -30,6 +30,12 @@ export declare class GteEmbedder {
     private ensureModelLoaded;
     private loadIndex;
     private createEmptyIndex;
+    /**
+     * Clear in-memory index for force-rebuild. Persisted file is overwritten
+     * on next saveIndex(). In-place mutation preserves references held by
+     * SearchEngine / other consumers.
+     */
+    clearIndex(): void;
     private saveIndex;
     /**
      * Embed a single text string.
