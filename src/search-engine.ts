@@ -175,43 +175,46 @@ export class SearchEngine {
   }
 
   /**
-   * Search notes by semantic similarity using GTE-base embeddings.
-   * Falls back to keyword search if GTE embedder is not available.
+   * Search notes by semantic similarity using EmbeddingGemma embeddings.
+   * Falls back to keyword search if the semantic index is unavailable or empty.
    */
   async searchByQuery(
     queryText: string,
     limit: number = 10,
     threshold: number = 0.3
   ): Promise<SimilarNote[]> {
-    // Use GTE-base semantic search if available (block-level)
-    if (this.gteEmbedder) {
+    // Use semantic search if index is built and non-empty
+    const gteEntries = this.gteEmbedder?.getStats()?.entries ?? 0;
+    if (this.gteEmbedder && gteEntries > 0) {
       const gteResults = await this.gteEmbedder.search(queryText, limit * 3, threshold);
 
-      // Group by note, keep best block per note, but include matched block info
-      const noteMap = new Map<string, { path: string; similarity: number; matchedBlock: string; matchedBlockType: string; blocks: string[] }>();
-      for (const r of gteResults) {
-        const existing = noteMap.get(r.path);
-        if (!existing || r.similarity > existing.similarity) {
-          const source = this.loader.getSource(r.path);
-          noteMap.set(r.path, {
+      if (gteResults.length > 0) {
+        // Group by note, keep best block per note, but include matched block info
+        const noteMap = new Map<string, { path: string; similarity: number; matchedBlock: string; matchedBlockType: string; blocks: string[] }>();
+        for (const r of gteResults) {
+          const existing = noteMap.get(r.path);
+          if (!existing || r.similarity > existing.similarity) {
+            const source = this.loader.getSource(r.path);
+            noteMap.set(r.path, {
+              path: r.path,
+              similarity: r.similarity,
+              matchedBlock: r.block,
+              matchedBlockType: r.blockType,
+              blocks: source ? Object.keys(source.blocks || {}) : [],
+            });
+          }
+        }
+
+        return Array.from(noteMap.values())
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, limit)
+          .map(r => ({
             path: r.path,
             similarity: r.similarity,
-            matchedBlock: r.block,
-            matchedBlockType: r.blockType,
-            blocks: source ? Object.keys(source.blocks || {}) : [],
-          });
-        }
+            blocks: r.blocks,
+            matchedContent: `[${r.matchedBlockType}] ${r.matchedBlock}`,
+          }));
       }
-
-      return Array.from(noteMap.values())
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, limit)
-        .map(r => ({
-          path: r.path,
-          similarity: r.similarity,
-          blocks: r.blocks,
-          matchedContent: `[${r.matchedBlockType}] ${r.matchedBlock}`,
-        }));
     }
 
     // Fallback: keyword search
@@ -221,7 +224,14 @@ export class SearchEngine {
     for (const [path, source] of this.loader.getSources()) {
       try {
         const content = this.loader.readNoteContent(path).toLowerCase();
-        const matches = (content.match(new RegExp(queryLower, 'gi')) || []).length;
+        let matches = 0;
+        let searchIndex = 0;
+        while (queryLower.length > 0) {
+          const matchIndex = content.indexOf(queryLower, searchIndex);
+          if (matchIndex === -1) break;
+          matches++;
+          searchIndex = matchIndex + queryLower.length;
+        }
 
         if (matches > 0) {
           const score = Math.min(matches / 10, 1.0);
@@ -327,7 +337,7 @@ export class SearchEngine {
         totalBlocks,
       },
       gte: gteStats,
-      primary: gteStats ? 'gte' : 'legacy',
+      primary: (gteStats?.entries ?? 0) > 0 ? 'gte' : 'legacy',
     };
   }
 }

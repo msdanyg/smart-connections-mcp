@@ -163,7 +163,7 @@ const tools: Tool[] = [
   },
   {
     name: 'search_notes',
-    description: 'Semantic search for notes using GTE-base (768d) embeddings. Returns notes ranked by cosine similarity. Much more accurate than keyword search.',
+    description: 'Semantic search for notes using EmbeddingGemma-300m embeddings. Returns notes ranked by cosine similarity. Falls back to keyword search if the semantic index is unavailable.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -245,7 +245,7 @@ const tools: Tool[] = [
   },
   {
     name: 'rebuild_gte_index',
-    description: 'Rebuild the GTE-base (768d) semantic search index. Only re-embeds notes whose content has changed. Use force=true to re-embed everything.',
+    description: 'Rebuild the semantic search index (EmbeddingGemma-300m, 768d). Only re-embeds notes whose content has changed. Use force=true to re-embed everything.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -377,7 +377,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify({
                 message: 'GTE index rebuilt successfully',
                 ...stats,
-                total_indexed: Object.keys(gteEmbedder.getStats()?.entries || {}).toString(),
+                total_indexed: gteEmbedder.getStats()?.entries ?? 0,
                 gte_stats: gteEmbedder.getStats(),
               }, null, 2),
             },

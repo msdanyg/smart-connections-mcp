@@ -22,8 +22,8 @@ export declare class SearchEngine {
      */
     getConnectionGraph(notePath: string, depth?: number, threshold?: number, maxPerLevel?: number): ConnectionGraph;
     /**
-     * Search notes by semantic similarity using GTE-base embeddings.
-     * Falls back to keyword search if GTE embedder is not available.
+     * Search notes by semantic similarity using EmbeddingGemma embeddings.
+     * Falls back to keyword search if the semantic index is unavailable or empty.
      */
     searchByQuery(queryText: string, limit?: number, threshold?: number): Promise<SimilarNote[]>;
     /**

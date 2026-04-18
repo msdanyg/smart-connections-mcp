@@ -560,9 +560,12 @@ export class GteEmbedder {
           continue;
         }
 
-        // Note changed — remove all old entries for this note
+        // Note changed — remove all old entries for this note.
+        // Entry keys are either `notePath` (__full__) or `notePath#blockKey`, so
+        // prefix matching avoids reading the note_path property on every entry.
+        const notePrefix = notePath + '#';
         for (const entryKey of Object.keys(this.index!.entries)) {
-          if (this.index!.entries[entryKey].note_path === notePath) {
+          if (entryKey === notePath || entryKey.startsWith(notePrefix)) {
             delete this.index!.entries[entryKey];
           }
         }
@@ -572,49 +575,58 @@ export class GteEmbedder {
         const contentVecs: number[][] = [];  // for note-level vector (excluding YAML)
         const contentLens: number[] = [];
 
-        // Batch embed all blocks for this note (~1.5x vs sequential)
-        const blockTexts = blocks.map(b => b.content);
-        const blockVecs = await this.embedBatch(blockTexts);
+        if (blocks.length > 0) {
+          // Batch embed all blocks for this note (~1.5x vs sequential)
+          const blockTexts = blocks.map(b => b.content);
+          const blockVecs = await this.embedBatch(blockTexts);
 
-        for (let b = 0; b < blocks.length; b++) {
-          const block = blocks[b];
-          const vec = blockVecs[b];
-          const entryKey = `${notePath}#${block.key}`;
+          for (let b = 0; b < blocks.length; b++) {
+            const block = blocks[b];
+            const vec = blockVecs[b];
+            const entryKey = `${notePath}#${block.key}`;
 
-          this.index!.entries[entryKey] = {
-            vec,
-            note_path: notePath,
-            block_key: block.key,
-            block_type: block.type,
-            char_length: block.content.length,
-            hash: noteHash,
-            updated_at: Date.now(),
-          };
+            this.index!.entries[entryKey] = {
+              vec,
+              note_path: notePath,
+              block_key: block.key,
+              block_type: block.type,
+              char_length: block.content.length,
+              hash: noteHash,
+              updated_at: Date.now(),
+            };
 
-          stats.blocks_by_type[block.type]++;
-          stats.blocks_total++;
+            stats.blocks_by_type[block.type]++;
+            stats.blocks_total++;
 
-          if (block.type !== 'yaml') {
-            contentVecs.push(vec);
-            contentLens.push(block.content.length);
+            if (block.type !== 'yaml') {
+              contentVecs.push(vec);
+              contentLens.push(block.content.length);
+            }
           }
         }
 
-        // Note-level vector: length-weighted mean of content blocks
+        // Note-level vector: length-weighted mean of content blocks.
+        // If parsing yields no usable content blocks, fall back to embedding the entire note
+        // so the __full__ entry still exists for unchanged-note detection on subsequent runs.
+        let noteVec: number[];
         if (contentVecs.length > 0) {
-          const noteVec = lengthWeightedMean(contentVecs, contentLens);
-          this.index!.entries[notePath] = {
-            vec: noteVec,
-            note_path: notePath,
-            block_key: '__full__',
-            block_type: 'full',
-            char_length: content.length,
-            hash: noteHash,
-            updated_at: Date.now(),
-          };
-          stats.blocks_by_type.full++;
-          stats.blocks_total++;
+          noteVec = lengthWeightedMean(contentVecs, contentLens);
+        } else {
+          const fallbackVecs = await this.embedBatch([content]);
+          noteVec = fallbackVecs[0];
         }
+
+        this.index!.entries[notePath] = {
+          vec: noteVec,
+          note_path: notePath,
+          block_key: '__full__',
+          block_type: 'full',
+          char_length: content.length,
+          hash: noteHash,
+          updated_at: Date.now(),
+        };
+        stats.blocks_by_type.full++;
+        stats.blocks_total++;
 
         stats.notes_processed++;
 
