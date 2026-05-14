@@ -149,7 +149,7 @@ const tools: Tool[] = [
   },
   {
     name: 'search_notes',
-    description: 'Search for notes using a text query. Returns notes ranked by relevance with similarity scores.',
+    description: 'Search for notes using semantic similarity. Generates an embedding from the query text and finds the most relevant notes by cosine similarity. This is true semantic search, not keyword matching.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -270,7 +270,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'search_notes': {
         const { query, limit, threshold } = SearchNotesSchema.parse(args);
-        const results = searchEngine.searchByQuery(query, limit, threshold);
+        const results = await searchEngine.searchByQuery(query, limit, threshold);
         return {
           content: [
             {

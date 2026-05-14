@@ -20,9 +20,11 @@ export declare class SearchEngine {
      */
     getConnectionGraph(notePath: string, depth?: number, threshold?: number, maxPerLevel?: number): ConnectionGraph;
     /**
-     * Search notes by content similarity
+     * Search notes by semantic similarity using embeddings.
+     * Generates an embedding vector from the query text, then finds
+     * nearest neighbors among the indexed notes.
      */
-    searchByQuery(queryText: string, limit?: number, threshold?: number): SimilarNote[];
+    searchByQuery(queryText: string, limit?: number, threshold?: number): Promise<SimilarNote[]>;
     /**
      * Get note content with matched blocks highlighted
      */

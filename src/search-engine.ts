@@ -4,6 +4,7 @@
 
 import type { SmartSource, SimilarNote, ConnectionNode, ConnectionGraph, NoteContent } from './types.js';
 import { cosineSimilarity, findNearestNeighbors } from './embedding-utils.js';
+import { generateEmbedding } from './embedding-generator.js';
 import type { SmartConnectionsLoader } from './smart-connections-loader.js';
 
 export class SearchEngine {
@@ -172,49 +173,47 @@ export class SearchEngine {
   }
 
   /**
-   * Search notes by content similarity
+   * Search notes by semantic similarity using embeddings.
+   * Generates an embedding vector from the query text, then finds
+   * nearest neighbors among the indexed notes.
    */
-  searchByQuery(
+  async searchByQuery(
     queryText: string,
     limit: number = 10,
     threshold: number = 0.5
-  ): SimilarNote[] {
-    // For now, we'll do a simple keyword match since we don't have
-    // a way to generate embeddings for arbitrary text without the model.
-    // In a full implementation, you'd call the embedding model here.
+  ): Promise<SimilarNote[]> {
+    // Generate embedding for the query text
+    const queryVec = await generateEmbedding(queryText, this.embeddingModelKey);
 
-    const results: SimilarNote[] = [];
-    const queryLower = queryText.toLowerCase();
-
-    for (const [path, source] of this.loader.getSources()) {
-      try {
-        const content = this.loader.readNoteContent(path).toLowerCase();
-
-        // Simple relevance scoring based on keyword matches
-        const matches = (content.match(new RegExp(queryLower, 'gi')) || []).length;
-
-        if (matches > 0) {
-          // Normalize score (this is a crude approximation)
-          const score = Math.min(matches / 10, 1.0);
-
-          if (score >= threshold) {
-            results.push({
-              path,
-              similarity: score,
-              blocks: Object.keys(source.blocks || {})
-            });
+    // Build vector dataset from all sources
+    const vectors = Array.from(this.loader.getSources().entries())
+      .map(([path, src]) => {
+        const emb = src.embeddings[this.embeddingModelKey];
+        return {
+          id: path,
+          vec: emb?.vec || [],
+          metadata: {
+            blocks: Object.keys(src.blocks || {}),
+            lastModified: src.last_import?.mtime || 0
           }
-        }
-      } catch (error) {
-        // Skip notes that can't be read
-        continue;
-      }
-    }
+        };
+      })
+      .filter(item => item.vec.length > 0);
 
-    // Sort by similarity and limit
-    return results
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
+    // Find nearest neighbors using cosine similarity
+    const neighbors = findNearestNeighbors(
+      queryVec,
+      vectors,
+      limit,
+      threshold
+    );
+
+    // Convert to SimilarNote format
+    return neighbors.map(neighbor => ({
+      path: neighbor.id,
+      similarity: neighbor.similarity,
+      blocks: neighbor.metadata.blocks
+    }));
   }
 
   /**
