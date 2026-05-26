@@ -97,6 +97,7 @@ const GetStatsSchema = z.object({});
 
 const RebuildGteIndexSchema = z.object({
   force: z.boolean().default(false).describe('Force re-embed all notes (ignore cache)'),
+  reload: z.boolean().default(false).describe('Re-read .smart-env from disk first, picking up notes the Obsidian plugin embedded after server startup'),
 });
 
 // Define available tools
@@ -245,13 +246,18 @@ const tools: Tool[] = [
   },
   {
     name: 'rebuild_gte_index',
-    description: 'Rebuild the semantic search index (EmbeddingGemma-300m, 768d). Only re-embeds notes whose content has changed. Use force=true to re-embed everything.',
+    description: 'Rebuild the semantic search index (EmbeddingGemma-300m, 768d). Only re-embeds notes whose content has changed. Use force=true to re-embed everything. Use reload=true to first re-read .smart-env from disk, picking up notes the Obsidian plugin embedded after server startup (avoids a process restart).',
     inputSchema: {
       type: 'object',
       properties: {
         force: {
           type: 'boolean',
           description: 'Force re-embed all notes (ignore cache), default false',
+          default: false,
+        },
+        reload: {
+          type: 'boolean',
+          description: 'Re-read .smart-env from disk before indexing, picking up newly-embedded notes without a server restart, default false',
           default: false,
         },
       },
@@ -349,7 +355,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'rebuild_gte_index': {
-        const { force } = RebuildGteIndexSchema.parse(args);
+        const { force, reload } = RebuildGteIndexSchema.parse(args);
+
+        // Optionally re-read .smart-env from disk first so notes the Obsidian
+        // plugin embedded after startup are picked up without a process restart.
+        let reloadInfo: { before: number; after: number } | undefined;
+        if (reload) {
+          reloadInfo = await loader.reload();
+          console.error(`Reloaded sources from .smart-env: ${reloadInfo.before} -> ${reloadInfo.after}`);
+        }
 
         // Get all note paths from Smart Connections loader
         const notePaths = Array.from(loader.getSources().keys());
@@ -376,6 +390,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: 'text',
               text: JSON.stringify({
                 message: 'GTE index rebuilt successfully',
+                ...(reloadInfo ? { reloaded_sources: reloadInfo } : {}),
                 ...stats,
                 total_indexed: gteEmbedder.getStats()?.entries ?? 0,
                 gte_stats: gteEmbedder.getStats(),
