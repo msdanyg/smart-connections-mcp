@@ -706,6 +706,35 @@ export class GteEmbedder {
       .slice(0, limit);
   }
 
+  /**
+   * Find notes similar to a given note using the gte note-level (__full__) vectors.
+   * Consistent with search_notes (same 768d EmbeddingGemma space), and covers notes
+   * that only exist in this gte index (e.g. disk-walk discovered notes the Obsidian
+   * plugin never embedded into .ajson legacy vectors).
+   * Returns null if the note has no __full__ entry, so callers can fall back to legacy.
+   * Synchronous: reuses the stored note vector, no query embedding needed.
+   */
+  similarByPath(
+    notePath: string,
+    limit: number = 10,
+    threshold: number = 0.5
+  ): Array<{ path: string; similarity: number }> | null {
+    if (!this.index) return null;
+    const self = this.index.entries[notePath];
+    if (!self || self.block_type !== 'full') return null;
+
+    const results: Array<{ path: string; similarity: number }> = [];
+    for (const entry of Object.values(this.index.entries)) {
+      if (entry.block_type !== 'full') continue;
+      if (entry.note_path === notePath) continue;
+      const sim = this.cosineSim(self.vec, entry.vec);
+      if (sim >= threshold) {
+        results.push({ path: entry.note_path, similarity: sim });
+      }
+    }
+    return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+  }
+
   private cosineSim(a: number[], b: number[]): number {
     if (a.length !== b.length) return 0;
     let dot = 0, normA = 0, normB = 0;

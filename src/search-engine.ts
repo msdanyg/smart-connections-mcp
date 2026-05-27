@@ -26,6 +26,24 @@ export class SearchEngine {
     threshold: number = 0.5,
     limit: number = 10
   ): SimilarNote[] {
+    // Prefer the gte index (768d EmbeddingGemma): consistent with search_notes and
+    // covers notes present only in gte (e.g. disk-walk discovered notes lacking
+    // legacy .ajson vectors). Falls back to legacy plugin embeddings if the note
+    // has no gte __full__ entry.
+    if (this.gteEmbedder) {
+      const gteSim = this.gteEmbedder.similarByPath(notePath, limit, threshold);
+      if (gteSim) {
+        return gteSim.map(n => {
+          const src = this.loader.getSource(n.path);
+          return {
+            path: n.path,
+            similarity: n.similarity,
+            blocks: src ? Object.keys(src.blocks || {}) : [],
+          };
+        });
+      }
+    }
+
     const source = this.loader.getSource(notePath);
 
     if (!source) {
