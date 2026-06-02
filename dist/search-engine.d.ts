@@ -8,6 +8,7 @@ export declare class SearchEngine {
     private loader;
     private embeddingModelKey;
     private gteEmbedder;
+    private bm25;
     constructor(loader: SmartConnectionsLoader, gteEmbedder?: GteEmbedder);
     /**
      * Find similar notes to a given note path
@@ -25,6 +26,10 @@ export declare class SearchEngine {
      * Search notes by semantic similarity using EmbeddingGemma embeddings.
      * Falls back to keyword search if the semantic index is unavailable or empty.
      */
+    /** BM25 인덱스 lazy build (첫 query 시 1회, in-memory — 인덱스 파일 변경 0) */
+    private ensureBM25;
+    /** reranker 입력용 노트 텍스트 (title + 본문 발췌, ≤2000자) */
+    private candidateText;
     searchByQuery(queryText: string, limit?: number, threshold?: number): Promise<SimilarNote[]>;
     /**
      * Get note content with matched blocks highlighted
