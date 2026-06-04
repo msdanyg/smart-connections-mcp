@@ -63,6 +63,11 @@ const GetNoteContentSchema = z.object({
     include_blocks: z.array(z.string()).optional().describe('Specific block headings to include'),
 });
 const GetStatsSchema = z.object({});
+const GetSessionSubgraphSchema = z.object({
+    query: z.string().describe('Natural language query describing the session topic'),
+    n: z.number().int().positive().max(40).default(20).describe('Number of results to return (default 20, max 40)'),
+    min_confidence: z.number().min(0).max(1).optional().describe('Only return pages with confidence >= this value'),
+});
 // Define available tools
 const tools = [
     {
@@ -207,6 +212,33 @@ const tools = [
             properties: {},
         },
     },
+    {
+        name: 'get_session_subgraph',
+        description: 'Return a pre-filtered, pre-enriched neighbourhood of the most relevant vault pages for a query. Each result includes path, similarity score, one-line summary, confidence, domains, and wikilink connections — replacing many individual search+read calls.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Natural language query describing the session topic',
+                },
+                n: {
+                    type: 'number',
+                    description: 'Number of results to return, default 20, max 40',
+                    minimum: 1,
+                    maximum: 40,
+                    default: 20,
+                },
+                min_confidence: {
+                    type: 'number',
+                    description: 'Optional — only return pages with confidence >= this value (null-confidence pages excluded when set)',
+                    minimum: 0,
+                    maximum: 1,
+                },
+            },
+            required: ['query'],
+        },
+    },
 ];
 // Handle tool list requests
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -285,6 +317,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         {
                             type: 'text',
                             text: JSON.stringify(stats, null, 2),
+                        },
+                    ],
+                };
+            }
+            case 'get_session_subgraph': {
+                const { query, n, min_confidence } = GetSessionSubgraphSchema.parse(args);
+                const results = searchEngine.getSessionSubgraph(query, n, min_confidence);
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(results, null, 2),
                         },
                     ],
                 };

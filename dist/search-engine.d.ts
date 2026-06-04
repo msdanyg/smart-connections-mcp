@@ -1,7 +1,7 @@
 /**
  * Semantic search engine for Smart Connections
  */
-import type { SimilarNote, ConnectionGraph, NoteContent } from './types.js';
+import type { SimilarNote, ConnectionGraph, NoteContent, SubgraphNode } from './types.js';
 import type { SmartConnectionsLoader } from './smart-connections-loader.js';
 export declare class SearchEngine {
     private loader;
@@ -27,6 +27,20 @@ export declare class SearchEngine {
      * Get note content with matched blocks highlighted
      */
     getNoteWithContext(notePath: string, includeBlocks?: string[]): NoteContent;
+    /**
+     * Return an enriched semantic neighbourhood for a query.
+     * Uses multi-keyword scoring over file content, then reads each result's
+     * YAML frontmatter to attach summary, confidence, domains, and linked_to.
+     */
+    getSessionSubgraph(query: string, n?: number, minConfidence?: number): SubgraphNode[];
+    /**
+     * Tokenize a query and score each vault note by how many keyword hits it has.
+     * Unlike searchByQuery (which treats the whole string as a single regex), this
+     * splits on whitespace so multi-word queries work correctly.
+     */
+    private searchByKeywords;
+    private parseFrontmatter;
+    private inferPageType;
     /**
      * Get statistics about the knowledge base
      */

@@ -2,7 +2,7 @@
  * Semantic search engine for Smart Connections
  */
 
-import type { SmartSource, SimilarNote, ConnectionNode, ConnectionGraph, NoteContent } from './types.js';
+import type { SmartSource, SimilarNote, ConnectionNode, ConnectionGraph, NoteContent, SubgraphNode } from './types.js';
 import { cosineSimilarity, findNearestNeighbors } from './embedding-utils.js';
 import type { SmartConnectionsLoader } from './smart-connections-loader.js';
 
@@ -233,6 +233,137 @@ export class SearchEngine {
       content,
       blocks: availableBlocks
     };
+  }
+
+  /**
+   * Return an enriched semantic neighbourhood for a query.
+   * Uses multi-keyword scoring over file content, then reads each result's
+   * YAML frontmatter to attach summary, confidence, domains, and linked_to.
+   */
+  getSessionSubgraph(
+    query: string,
+    n: number = 20,
+    minConfidence?: number
+  ): SubgraphNode[] {
+    const pool = this.searchByKeywords(query, Math.min(n * 4, 160));
+    const nodes: SubgraphNode[] = [];
+
+    for (const { path: notePath, similarity } of pool) {
+      try {
+        const content = this.loader.readNoteContent(notePath);
+        const fm = this.parseFrontmatter(content);
+
+        if (minConfidence !== undefined) {
+          if (fm.confidence === null || fm.confidence < minConfidence) continue;
+        }
+
+        const basename = notePath.split('/').pop()?.replace(/\.md$/, '') ?? notePath;
+        nodes.push({
+          path: notePath,
+          name: basename,
+          similarity,
+          summary_1line: fm.summary_1line,
+          confidence: fm.confidence,
+          domains: fm.domains,
+          linked_to: fm.linked_to,
+          page_type: this.inferPageType(basename),
+        });
+      } catch {
+        // skip files that can't be read
+      }
+    }
+
+    return nodes.sort((a, b) => b.similarity - a.similarity).slice(0, n);
+  }
+
+  // --- private helpers ---
+
+  /**
+   * Tokenize a query and score each vault note by how many keyword hits it has.
+   * Unlike searchByQuery (which treats the whole string as a single regex), this
+   * splits on whitespace so multi-word queries work correctly.
+   */
+  private searchByKeywords(
+    query: string,
+    limit: number
+  ): Array<{ path: string; similarity: number }> {
+    const stopWords = new Set([
+      'a', 'an', 'the', 'and', 'or', 'of', 'for', 'in', 'to', 'with',
+      'by', 'at', 'on', 'is', 'are', 'was', 'be', 'its', 'that', 'this',
+    ]);
+    const keywords = query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !stopWords.has(w))
+      .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+    if (keywords.length === 0) return [];
+
+    const scored: Array<{ path: string; similarity: number }> = [];
+
+    for (const [notePath] of this.loader.getSources()) {
+      try {
+        const content = this.loader.readNoteContent(notePath).toLowerCase();
+        let total = 0;
+        for (const kw of keywords) {
+          total += (content.match(new RegExp(kw, 'g')) || []).length;
+        }
+        if (total > 0) {
+          scored.push({ path: notePath, similarity: Math.min(total / (keywords.length * 3), 1.0) });
+        }
+      } catch {
+        // skip unreadable notes
+      }
+    }
+
+    return scored.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+  }
+
+  private parseFrontmatter(content: string): {
+    summary_1line: string;
+    confidence: number | null;
+    domains: string[];
+    linked_to: string[];
+  } {
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (!match) return { summary_1line: '', confidence: null, domains: [], linked_to: [] };
+
+    const yaml = match[1];
+
+    const summaryMatch = yaml.match(/^summary_1line:\s*(.+)$/m);
+    const summary_1line = summaryMatch
+      ? summaryMatch[1].trim().replace(/^["']|["']$/g, '')
+      : '';
+
+    const confidenceMatch = yaml.match(/^confidence:\s*([\d.]+)/m);
+    const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : null;
+
+    const domainsMatch = yaml.match(/^domains:\s*\[([^\]]*)\]/m);
+    const domains = domainsMatch
+      ? domainsMatch[1].split(',').map(d => d.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+      : [];
+
+    const linkedToMatch = yaml.match(/^linked_to:\s*\[(.+)\]/m);
+    const linked_to: string[] = [];
+    if (linkedToMatch) {
+      const raw = linkedToMatch[1];
+      const wikiRe = /\[\[([^\]]+)\]\]/g;
+      let m: RegExpExecArray | null;
+      while ((m = wikiRe.exec(raw)) !== null) {
+        linked_to.push(m[1]);
+      }
+    }
+
+    return { summary_1line, confidence, domains, linked_to };
+  }
+
+  private inferPageType(name: string): SubgraphNode['page_type'] {
+    if (name.startsWith('entity_')) return 'entity';
+    if (name.startsWith('synthesis_')) return 'synthesis';
+    if (name.startsWith('summary_')) return 'summary';
+    if (name.startsWith('query_')) return 'query';
+    return 'other';
   }
 
   /**

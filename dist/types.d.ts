@@ -78,4 +78,14 @@ export interface NoteContent {
     content: string;
     blocks: string[];
 }
+export interface SubgraphNode {
+    path: string;
+    name: string;
+    similarity: number;
+    summary_1line: string;
+    confidence: number | null;
+    domains: string[];
+    linked_to: string[];
+    page_type: "entity" | "synthesis" | "summary" | "query" | "other";
+}
 //# sourceMappingURL=types.d.ts.map
