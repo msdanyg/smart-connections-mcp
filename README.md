@@ -44,7 +44,27 @@ Retrieve full note content or specific sections/blocks with intelligent extracti
 - An Obsidian vault with Smart Connections plugin installed and embeddings generated
 - Claude Desktop (or another MCP client)
 
-### Setup
+### Option A — npx (recommended)
+
+No clone, no build. Add this to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows) and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "smart-connections": {
+      "command": "npx",
+      "args": ["-y", "smart-connections-mcp"],
+      "env": {
+        "SMART_VAULT_PATH": "/ABSOLUTE/PATH/TO/YOUR/OBSIDIAN/VAULT"
+      }
+    }
+  }
+}
+```
+
+`npx` fetches and runs the published [`smart-connections-mcp`](https://www.npmjs.com/package/smart-connections-mcp) package automatically — just point `SMART_VAULT_PATH` at the vault folder that contains your `.smart-env` directory.
+
+### Option B — from source
 
 1. **Clone the repository:**
    ```bash

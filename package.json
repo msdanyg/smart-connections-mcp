@@ -1,27 +1,56 @@
 {
   "name": "smart-connections-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Obsidian Smart Connections - enables semantic search and knowledge graph queries",
+  "mcpName": "io.github.msdanyg/smart-connections-mcp",
+  "description": "MCP server that gives Claude semantic search and knowledge-graph queries over your Obsidian vault, reusing Smart Connections embeddings",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "smart-connections-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
-    "dev": "tsc && node dist/index.js"
+    "dev": "tsc && node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
+    "mcp-server",
     "obsidian",
     "smart-connections",
     "semantic-search",
-    "embeddings"
+    "embeddings",
+    "knowledge-graph",
+    "vector-search",
+    "rag",
+    "claude",
+    "anthropic",
+    "pkm"
   ],
   "author": "Daniel Glickman",
   "license": "MIT",
+  "homepage": "https://github.com/msdanyg/smart-connections-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msdanyg/smart-connections-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/msdanyg/smart-connections-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
     "zod": "^3.23.8"
