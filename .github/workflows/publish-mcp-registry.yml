@@ -1,0 +1,35 @@
+name: Publish to MCP Registry
+
+# Publishes server.json to the official MCP registry (registry.modelcontextprotocol.io)
+# using GitHub OIDC — no secrets, no browser step. The npm package is published
+# separately; this only lists/updates the registry entry.
+#
+# Runs automatically when a v* tag is pushed, and can be triggered manually.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish-registry:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC authentication to the MCP registry
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate server.json
+
+      - name: Authenticate (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish
