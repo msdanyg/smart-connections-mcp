@@ -1,6 +1,17 @@
 # Smart Connections MCP Server
 
-A Model Context Protocol (MCP) server that provides semantic search and knowledge graph capabilities for Obsidian vaults using Smart Connections embeddings.
+**Give Claude semantic memory of your Obsidian vault.** A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets Claude search your notes by *meaning*, map how ideas connect, and pull the right context on demand — reusing the embeddings the [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin already generated, so there's nothing new to index.
+
+[![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-1f6feb)](https://modelcontextprotocol.io/)
+[![Obsidian](https://img.shields.io/badge/Obsidian-Smart_Connections-7c3aed)](https://github.com/brianpetro/obsidian-smart-connections)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/msdanyg/smart-connections-mcp?style=social)](https://github.com/msdanyg/smart-connections-mcp/stargazers)
+
+> Keyword search finds the notes that share your *words*. This finds the notes that share your *ideas* — the ones you forgot you wrote. If it earns a spot in your workflow, **⭐ star it** so other Obsidian users find it.
+
+## Why use it
+
+Your vault already holds the answer — the problem is retrieval. Claude can't grep its way to "the note where I reasoned about pricing," because you phrased it three different ways across six months. This server hands Claude the same 384-dimensional semantic index Smart Connections built inside Obsidian, so "find notes similar to my pricing thesis" or "graph everything connected to this research note" resolves in milliseconds against pre-computed embeddings — no re-indexing, no cloud calls, no vault ever leaving your machine.
 
 ## Overview
 
