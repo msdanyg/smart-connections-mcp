@@ -1,86 +1,80 @@
-/**
- * Type definitions for Smart Connections MCP Server
- */
+/** Shapes of Smart Connections `.smart-env` data (v3.x) and server results. */
+
+export interface EmbeddingData {
+  vec?: number[];
+}
 
 export interface SmartSource {
   path: string;
-  embeddings: {
-    [modelKey: string]: {
-      vec: number[];
-      last_embed: {
-        hash: string;
-        tokens: number;
-      };
-    };
-  };
-  last_read: {
-    hash: string;
-    at: number;
-  };
-  class_name: string;
-  last_import: {
-    mtime: number;
-    size: number;
-    at: number;
-    hash: string;
-  };
-  blocks: {
-    [heading: string]: [number, number]; // [start_line, end_line]
-  };
+  class_name?: string;
+  embeddings?: Record<string, EmbeddingData>;
+  /** heading key -> [startLine, endLine], 1-indexed inclusive */
+  blocks?: Record<string, [number, number]>;
+  last_import?: { mtime?: number; size?: number };
+  metadata?: Record<string, unknown>;
+}
+
+export interface SmartBlock {
+  /** e.g. "Note.md##Heading#{2}" — always set (from the AJSON key if absent) */
+  key: string;
+  path?: string | null;
+  class_name?: string;
+  /** [startLine, endLine], 1-indexed inclusive */
+  lines?: [number, number];
+  embeddings?: Record<string, EmbeddingData>;
+  size?: number;
+}
+
+export interface VaultData {
+  /** note path -> source */
+  sources: Map<string, SmartSource>;
+  /** block key -> block */
+  blocks: Map<string, SmartBlock>;
 }
 
 export interface SmartEnvConfig {
-  is_obsidian_vault: boolean;
-  smart_blocks: {
-    embed_blocks: boolean;
-    min_chars: number;
+  smart_sources?: {
+    embed_model?: { adapter?: string; [key: string]: unknown };
   };
-  smart_sources: {
-    single_file_data_path: string;
-    min_chars: number;
-    embed_model: {
-      adapter: string;
-      [key: string]: any;
-    };
-    excluded_headings: string;
-    file_exclusions: string;
-    folder_exclusions: string;
-  };
-  smart_chat_threads?: {
-    chat_model: {
-      adapter: string;
-      [key: string]: any;
-    };
-    active_thread_key?: string;
-  };
+}
+
+export interface SearchResult {
+  path: string;
+  vault: string;
+  similarity: number;
+  scope: 'note' | 'block';
+  /** heading portion of the block key, e.g. "##Intro" — block hits only */
+  block?: string;
+  snippet: string;
+}
+
+export interface SearchResponse {
+  mode: 'semantic' | 'keyword-fallback';
+  warning?: string;
+  results: SearchResult[];
 }
 
 export interface SimilarNote {
   path: string;
+  vault: string;
   similarity: number;
-  blocks?: string[];
-  matchedContent?: string;
-}
-
-export interface ConnectionNode {
-  root: string;
-  path: string;
-  depth: number;
-  connections: ConnectionNode[];
-  similarity: number;
+  blocks: string[];
 }
 
 export interface ConnectionGraph {
   root: string;
-  connections: Array<{
-    path: string;
-    depth: number;
-    similarity: number;
-  }>;
+  vault: string;
+  connections: Array<{ path: string; depth: number; similarity: number }>;
 }
 
-export interface NoteContent {
+export interface VaultInfo {
+  name: string;
   path: string;
-  content: string;
-  blocks: string[];
+  status: 'ok' | 'error';
+  error?: string;
+  notes?: number;
+  blocks?: number;
+  indexed?: number;
+  embeddingDim?: number;
+  modelKey?: string;
 }
