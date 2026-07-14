@@ -20,4 +20,9 @@ describe('resolveInsideVault', () => {
   it('allows internal ".." that stays inside', () => {
     expect(resolveInsideVault(ROOT, 'a/../Note.md')).toBe(path.join(ROOT, 'Note.md'));
   });
+
+  it('rejects sibling directories sharing the root as a prefix', () => {
+    expect(() => resolveInsideVault(ROOT, '../vault-evil/secret.md')).toThrow(PathEscapeError);
+    expect(() => resolveInsideVault(ROOT, path.resolve('/tmp/vault-evil/secret.md'))).toThrow(PathEscapeError);
+  });
 });
