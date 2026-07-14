@@ -1,46 +1,54 @@
 # Troubleshooting Smart Connections MCP Server
 
-## Issue: "No embeddings found" Error in Claude Desktop
+## `"mode": "keyword-fallback"` in search results
 
-### Symptoms
-- ✅ `get_stats` works
-- ✅ `search_notes` works (keyword search)
-- ✅ `get_note_content` works
-- ❌ `get_similar_notes` fails with "No embeddings found for note"
-- ❌ `get_connection_graph` returns empty connections
+`search_notes` returned results, but the response says `"mode": "keyword-fallback"`
+instead of `"mode": "semantic"`. This means the local embedding model couldn't be
+loaded, so the server fell back to literal keyword matching and told you so
+explicitly (rather than silently degrading).
 
-### Root Cause
-Claude Desktop may be running an older version of the server that hasn't been restarted since the fix was applied.
+**Fix**: the model (~25MB) downloads from Hugging Face on first use and is then
+cached locally forever. Check your network connection once — if the machine had
+no internet on the very first run, the download never completed. Restart the
+server (or Claude Desktop) with network access and it will retry the download;
+subsequent runs work fully offline.
 
-### Complete Fix Procedure
+## A vault shows `"status": "error"` in `list_vaults`
 
-#### Step 1: Verify the Fix is Built
-```bash
-cd ~/smart-connections-mcp
-npm run build
-```
+Call `list_vaults` (or check `get_stats`) — if an entry reports `status: "error"`,
+that vault's Smart Connections data couldn't be loaded. Usually one of:
 
-This should complete without errors.
+- The `.smart-env` folder doesn't exist yet at that vault path — check
+  `SMART_VAULT_PATH` for typos and confirm the folder is really there.
+- Smart Connections hasn't finished indexing that vault in Obsidian yet — open
+  the vault in Obsidian, let Smart Connections finish generating embeddings,
+  then restart the MCP server (or wait for the next automatic reload).
 
-#### Step 2: Test Locally (Should Work)
-```bash
-cd ~/smart-connections-mcp
-node test-search.mjs
-```
+## Long queries get truncated
 
-Expected output:
-```
-Found 5 similar notes:
-1. tags.md (similarity: 0.821)
-2. Vault Structure and Organization.md (similarity: 0.796)
-... etc
-```
+Queries longer than ~1500 characters are truncated before being embedded (small
+embedding models cap out near 512 tokens); the server logs a notice to stderr
+when this happens. If you're pasting a long passage as a "query," keep it short
+and specific instead — semantic search works better on a focused question than
+a wall of text anyway.
 
-If this works, the server code is correct!
+## Server not appearing in Claude Desktop
 
-#### Step 3: Restart Claude Desktop COMPLETELY
+1. Verify the configuration file syntax (JSON must be valid — no trailing commas, proper quotes)
+2. Check that `SMART_VAULT_PATH` is set to absolute path(s), not relative
+3. Restart Claude Desktop completely (see below)
+4. Check Claude Desktop logs for error messages
 
-**IMPORTANT**: You must do a COMPLETE restart, not just refresh:
+### "Smart Connections directory not found"
+
+- Ensure your vault has the Smart Connections plugin installed
+- Verify embeddings have been generated (check the `.smart-env/multi/` directory)
+- Check that `SMART_VAULT_PATH` points to the correct vault
+
+## Doing a complete restart
+
+If the server seems to be running stale code or a stale config, do a **complete**
+restart, not just a refresh:
 
 1. **Quit Claude Desktop completely**:
    - Press **Cmd+Q** (not just closing the window!)
@@ -52,201 +60,22 @@ If this works, the server code is correct!
    ```
    Should show nothing (or only the grep command itself)
 
-3. **Kill any orphaned MCP servers**:
+3. **Kill any orphaned MCP server processes**:
    ```bash
    pkill -f "smart-connections-mcp"
    ```
 
-4. **Wait 5 seconds**, then reopen Claude Desktop
+4. **Wait a few seconds**, then reopen Claude Desktop and wait for it to fully
+   initialize (may take 10-15 seconds) before testing again.
 
-5. **Wait for it to fully initialize** (may take 10-15 seconds)
+## Still not working?
 
-#### Step 4: Verify in Claude Desktop
-
-Ask Claude to run these tests:
-
-1. **"Use get_stats to show me my Smart Connections statistics"**
-
-   Expected: Should show `embeddingDimension: 384`
-
-   If it shows `0`, the old server is still running!
-
-2. **"Find notes similar to CLAUDE.md using get_similar_notes"**
-
-   Expected: Should return 5-10 similar notes with similarity scores
-
-   If it fails, Claude Desktop didn't reload the server.
-
-3. **"Build a connection graph from CLAUDE.md"**
-
-   Expected: Should return a graph with connections
-
-   If empty, the old server is still running.
-
-### Advanced Troubleshooting
-
-#### Check Which Server Claude Desktop is Using
-
-1. **Find the running process**:
+1. Test the server directly, the same way Claude Desktop launches it:
    ```bash
-   ps aux | grep smart-connections-mcp
+   SMART_VAULT_PATH="/path/to/vault" npx -y smart-connections-mcp
    ```
-
-2. **Check the config Claude Desktop is using**:
-   ```bash
-   cat ~/Library/Application\ Support/Claude/claude_desktop_config.json
-   ```
-
-   Should show:
-   ```json
-   {
-     "mcpServers": {
-       "smart-connections": {
-         "command": "node",
-         "args": [
-           "/ABSOLUTE/PATH/TO/smart-connections-mcp/dist/index.js"
-         ],
-         "env": {
-           "SMART_VAULT_PATH": "/ABSOLUTE/PATH/TO/YOUR/OBSIDIAN/VAULT"
-         }
-       }
-     }
-   }
-   ```
-
-   Replace with your actual paths.
-
-3. **Force kill all Node processes** (nuclear option):
-   ```bash
-   pkill -9 node
-   ```
-   Then restart Claude Desktop.
-
-#### Check Server Logs
-
-If Claude Desktop has a log viewer or console, check for:
-- "Loading 135 source files..."
-- "Loaded 131 sources successfully"
-- "Smart Connections MCP Server initialized successfully"
-- "Loaded 131 notes"
-
-The key line is: **"Loaded 131 notes"** (not 0!)
-
-#### Manual Server Test
-
-Test the server exactly as Claude Desktop would:
-
-```bash
-cd ~/smart-connections-mcp
-export SMART_VAULT_PATH="/path/to/your/vault"
-node dist/index.js
-```
-
-Look for:
-```
-Loaded 131 sources successfully
-Smart Connections MCP Server initialized successfully
-Loaded 131 notes
-```
-
-Press Ctrl+C to stop.
-
-### What Was Fixed
-
-#### The Embedding Model Key Bug
-
-**Problem**: The code was looking for embeddings under the key `"transformers"` but they were stored under `"TaylorAI/bge-micro-v2"`.
-
-**Fix Location**: `src/smart-connections-loader.ts` lines 125-154
-
-**Before**:
-```javascript
-// Wrong: returned "transformers"
-return modelKeys[0];
-```
-
-**After**:
-```javascript
-// Correct: returns "TaylorAI/bge-micro-v2"
-const adapter = embedModel.adapter;
-const adapterConfig = embedModel[adapter];
-return adapterConfig.model_key;
-```
-
-#### The Null Path Bug
-
-**Problem**: Some source entries had `null` paths, causing crashes.
-
-**Fix Location**: `src/smart-connections-loader.ts` lines 88-91
-
-**Added**:
-```javascript
-if (sourceData && sourceData.path) {
-  this.sources.set(sourceData.path, sourceData);
-}
-```
-
-### Verification Checklist
-
-- [ ] Built code exists: `~/smart-connections-mcp/dist/index.js`
-- [ ] Direct test works: `node test-search.mjs` returns results
-- [ ] Claude Desktop fully quit (Cmd+Q)
-- [ ] No orphaned processes: `ps aux | grep smart-connections-mcp` shows nothing
-- [ ] Claude Desktop restarted
-- [ ] Waited 15 seconds for initialization
-- [ ] `get_stats` shows `embeddingDimension: 384`
-- [ ] `get_similar_notes` returns results
-- [ ] `get_connection_graph` returns connections
-
-### Still Not Working?
-
-If all else fails:
-
-1. **Remove the MCP server from config temporarily**:
-   - Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - Remove the entire `"smart-connections"` entry
-   - Save and restart Claude Desktop
-   - Verify Smart Connections tools are gone
-
-2. **Add it back**:
-   - Edit the config again
-   - Add back the smart-connections entry
-   - Save and restart Claude Desktop
-   - Test again
-
-3. **Check for multiple Node versions**:
-   ```bash
-   which node
-   node --version
-   ```
-
-   Should be v22.18.0 or similar. If different, update the config to use the full path.
-
-### Success Indicators
-
-When working correctly, you should be able to:
-
-1. **Find conceptually similar notes** (not just keyword matches):
-   - "Find notes similar to competitive analysis"
-   - Returns notes about competition, battlecards, market research
-
-2. **Build knowledge graphs**:
-   - "Show me a connection graph of product features"
-   - Returns multi-level graph of related feature docs
-
-3. **Semantic search**:
-   - "What notes discuss enterprise buyers?"
-   - Returns notes mentioning enterprises, B2B, large organizations
-
-All with similarity scores between 0.6-0.9 for well-matched content!
-
-### Contact Information
-
-If you've followed all steps and it still doesn't work:
-
-1. Check the server was rebuilt: `ls -la ~/smart-connections-mcp/dist/index.js`
-2. Verify the timestamp is recent (today's date)
-3. Review Claude Desktop's MCP server connection status
-4. Try the manual server test to confirm the code works standalone
-
-The issue is almost always that Claude Desktop hasn't fully restarted and is running a cached version of the old server.
+   Look for log lines confirming the vault(s) loaded, then press Ctrl+C to stop.
+2. Temporarily remove the `"smart-connections"` entry from
+   `claude_desktop_config.json`, restart, and confirm the tools disappear —
+   then add it back and restart again.
+3. Confirm you're on Node.js 20 or newer: `node --version`.

@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.msdanyg/smart-connections-mcp",
-  "description": "Give Claude semantic search + knowledge graphs over your Obsidian vault (Smart Connections)",
+  "description": "Local semantic search over Obsidian vaults via Smart Connections embeddings. Multi-vault, private.",
   "repository": {
     "url": "https://github.com/msdanyg/smart-connections-mcp",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "2.0.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "smart-connections-mcp",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "transport": {
         "type": "stdio"
       },
