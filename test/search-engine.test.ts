@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import { SearchEngine, type QueryEmbedder } from '../src/search-engine.js';
 import { VaultRegistry } from '../src/vault-registry.js';
-import { EmbedUnavailableError, AmbiguousNoteError } from '../src/errors.js';
+import { EmbedUnavailableError, AmbiguousNoteError, NoteNotFoundError } from '../src/errors.js';
 
 const FIXTURE_A = path.resolve(import.meta.dirname, 'fixtures/vault-a');
 const FIXTURE_B = path.resolve(import.meta.dirname, 'fixtures/vault-b');
@@ -93,6 +95,10 @@ describe('getSimilarNotes / graph', () => {
     expect(g.vault).toBe('vault-a');
     expect(g.connections.some((c) => c.path === 'Sub/Beta.md' && c.depth === 1)).toBe(true);
   });
+
+  it('propagates an error when the root note has no stored embedding', () => {
+    expect(() => engine().getConnectionGraph('Plain.md', { vault: 'vault-a' })).toThrow(EmbedUnavailableError);
+  });
 });
 
 describe('getNoteContent', () => {
@@ -110,6 +116,18 @@ describe('getNoteContent', () => {
     expect(r.extracted['##Intro']).toContain('Alpha intro text');
     expect(r.missing).toEqual(['##Nope']);
     expect(r.content).toBeUndefined();
+  });
+
+  it('rethrows when the backing file is gone instead of reporting a missing heading', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scmcp-engine-'));
+    try {
+      fs.cpSync(FIXTURE_A, tmp, { recursive: true });
+      fs.rmSync(path.join(tmp, 'Alpha.md'));
+      const eng = new SearchEngine(VaultRegistry.fromPaths([tmp]), fakeEmbedder);
+      expect(() => eng.getNoteContent('Alpha.md', { includeBlocks: ['##Intro'] })).toThrow(NoteNotFoundError);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

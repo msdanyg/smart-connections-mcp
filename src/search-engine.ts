@@ -1,8 +1,7 @@
 /** Orchestrates search, similarity, graphs, content, and stats across vaults. */
 
-import { blockNotePath } from './ajson-loader.js';
 import type { EmbedFn } from './embedder.js';
-import { EmbedUnavailableError } from './errors.js';
+import { BlockNotFoundError, EmbedUnavailableError } from './errors.js';
 import type {
   ConnectionGraph,
   SearchResponse,
@@ -167,8 +166,10 @@ export class SearchEngine {
       let similar: SimilarNote[];
       try {
         similar = this.getSimilarNotes(current, { vault: v.name, threshold, limit: maxPerLevel });
-      } catch {
-        return;
+      } catch (e) {
+        // A node beyond the root may lack a stored embedding — skip expanding it.
+        if (level > 0 && e instanceof EmbedUnavailableError) return;
+        throw e;
       }
       for (const s of similar) {
         if (!visited.has(s.path)) walk(s.path, level + 1, s.similarity);
@@ -192,8 +193,12 @@ export class SearchEngine {
       for (const heading of opts.includeBlocks) {
         try {
           extracted[heading] = v.extractBlockByHeading(notePath, heading);
-        } catch {
-          missing.push(heading);
+        } catch (e) {
+          if (e instanceof BlockNotFoundError) {
+            missing.push(heading);
+            continue;
+          }
+          throw e;
         }
       }
       return { path: notePath, vault: v.name, blocks, extracted, missing };
