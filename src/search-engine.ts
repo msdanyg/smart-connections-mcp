@@ -60,7 +60,9 @@ export class SearchEngine {
       }
     }
 
-    results.sort((a, b) => b.similarity - a.similarity);
+    const semanticRows = results.filter((r) => r.match === undefined).sort((a, b) => b.similarity - a.similarity);
+    const fallbackRows = results.filter((r) => r.match === 'keyword').sort((a, b) => b.similarity - a.similarity);
+    const ranked = [...semanticRows, ...fallbackRows];
     const allFellBack = fallbackVaults.length === vaults.length && vaults.length > 0;
     if (fallbackVaults.length > 0) {
       warnings.push(
@@ -71,7 +73,7 @@ export class SearchEngine {
     return {
       mode: allFellBack ? 'keyword-fallback' : 'semantic',
       ...(warnings.length ? { warning: warnings.join(' | ') } : {}),
-      results: results.slice(0, limit),
+      results: ranked.slice(0, limit),
     };
   }
 
@@ -126,6 +128,7 @@ export class SearchEngine {
         similarity: round(Math.min(total / 10, 1)),
         scope: 'note',
         snippet: raw.slice(start, start + SNIPPET_MAX),
+        match: 'keyword',
       });
     }
     return out.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
@@ -136,8 +139,8 @@ export class SearchEngine {
     opts: { vault?: string; threshold?: number; limit?: number } = {},
   ): SimilarNote[] {
     const { vault, threshold = 0.5, limit = 10 } = opts;
+    for (const candidate of this.registry.byName(vault)) candidate.maybeReload();
     const v = this.registry.resolveNote(notePath, vault);
-    v.maybeReload();
     const vec = v.data.sources.get(notePath)?.embeddings?.[v.modelKey]?.vec;
     if (!vec) throw new EmbedUnavailableError(`No stored embedding for note: ${notePath}`);
     return v.index
@@ -155,6 +158,7 @@ export class SearchEngine {
     opts: { vault?: string; depth?: number; threshold?: number; maxPerLevel?: number } = {},
   ): ConnectionGraph {
     const { vault, depth = 2, threshold = 0.6, maxPerLevel = 5 } = opts;
+    for (const candidate of this.registry.byName(vault)) candidate.maybeReload();
     const v = this.registry.resolveNote(notePath, vault);
     const visited = new Set<string>();
     const connections: ConnectionGraph['connections'] = [];
@@ -184,8 +188,8 @@ export class SearchEngine {
     notePath: string,
     opts: { vault?: string; includeBlocks?: string[] } = {},
   ): object {
+    for (const candidate of this.registry.byName(opts.vault)) candidate.maybeReload();
     const v = this.registry.resolveNote(notePath, opts.vault);
-    v.maybeReload();
     const blocks = Object.keys(v.data.sources.get(notePath)?.blocks ?? {});
     if (opts.includeBlocks && opts.includeBlocks.length > 0) {
       const extracted: Record<string, string> = {};
@@ -223,6 +227,7 @@ export class SearchEngine {
   }
 
   getStats(vaultName?: string): object {
+    for (const candidate of this.registry.byName(vaultName)) candidate.maybeReload();
     const vaults = this.registry.byName(vaultName);
     const perVault = vaults.map((v) => ({ name: v.name, ...v.stats() }));
     return {

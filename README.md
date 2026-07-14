@@ -48,6 +48,9 @@ Add to `claude_desktop_config.json` and restart Claude Desktop:
 
 One vault or several — separate paths with commas.
 
+`SMART_VAULT_PATHS` (plural) is also accepted as an alias for `SMART_VAULT_PATH` and takes
+precedence over it if both are set.
+
 ### Claude Code
 
 ```bash
@@ -64,7 +67,9 @@ similarity. Edits you make in Obsidian are picked up automatically.
 
 If the embedding model can't load (e.g. no network on very first run), search
 degrades to literal keyword matching and says so explicitly
-(`"mode": "keyword-fallback"`).
+(`"mode": "keyword-fallback"`). When only some vaults fall back, `mode` stays
+`"semantic"`, those rows carry `"match": "keyword"`, and they always rank
+after the true semantic rows.
 
 ## Migrating from v1
 

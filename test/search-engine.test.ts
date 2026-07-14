@@ -73,6 +73,23 @@ describe('search — keyword fallback', () => {
     expect(res.mode).toBe('keyword-fallback');
     expect(Array.isArray(res.results)).toBe(true);
   });
+
+  it('ranks semantic rows before fallback rows when vaults mix modes', async () => {
+    let calls = 0;
+    const flaky: QueryEmbedder = {
+      getEmbedFn: async () => {
+        if (calls++ > 0) throw new EmbedUnavailableError('offline');
+        return async () => E1;
+      },
+    };
+    const res = await engine(flaky).search('alpha apples', { threshold: 0.4 });
+    expect(res.mode).toBe('semantic');
+    expect(res.warning).toMatch(/vault-b/);
+    const kwStart = res.results.findIndex((r) => r.match === 'keyword');
+    expect(kwStart).toBeGreaterThan(0);
+    expect(res.results.slice(0, kwStart).every((r) => r.match === undefined)).toBe(true);
+    expect(res.results.slice(kwStart).every((r) => r.match === 'keyword')).toBe(true);
+  });
 });
 
 describe('getSimilarNotes / graph', () => {
@@ -125,6 +142,23 @@ describe('getNoteContent', () => {
       fs.rmSync(path.join(tmp, 'Alpha.md'));
       const eng = new SearchEngine(VaultRegistry.fromPaths([tmp]), fakeEmbedder);
       expect(() => eng.getNoteContent('Alpha.md', { includeBlocks: ['##Intro'] })).toThrow(NoteNotFoundError);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('sees a note added after startup without requiring a prior search', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scmcp-fresh-'));
+    try {
+      fs.cpSync(FIXTURE_A, tmp, { recursive: true });
+      const eng = new SearchEngine(VaultRegistry.fromPaths([tmp]), fakeEmbedder);
+      fs.writeFileSync(path.join(tmp, 'Fresh.md'), '# Fresh\nBrand new note.\n');
+      fs.appendFileSync(
+        path.join(tmp, '.smart-env/multi/Gamma_md.ajson'),
+        '"smart_sources:Fresh.md": {"path":"Fresh.md","class_name":"SmartSource","embeddings":{"test-model-8d":{"vec":[0,0,0,0,1,0,0,0]}},"blocks":{}},\n',
+      );
+      const r = eng.getNoteContent('Fresh.md') as { content: string };
+      expect(r.content).toContain('Brand new note');
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

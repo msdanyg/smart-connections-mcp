@@ -46,6 +46,8 @@ export interface SearchResult {
   /** heading portion of the block key, e.g. "##Intro" — block hits only */
   block?: string;
   snippet: string;
+  /** set on rows produced by keyword fallback; semantic rows omit it */
+  match?: 'keyword';
 }
 
 export interface SearchResponse {
