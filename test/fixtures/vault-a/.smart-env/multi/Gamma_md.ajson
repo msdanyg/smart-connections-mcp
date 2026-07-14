@@ -1,0 +1,6 @@
+"smart_sources:Gamma.md": {"path":"Gamma.md","class_name":"SmartSource","embeddings":{"test-model-8d":{"vec":[0,1,0,0,0,0,0,0]}},"blocks":{}},
+"smart_sources:Gamma.md": {"path":"Gamma.md","class_name":"SmartSource","embeddings":{"test-model-8d":{"vec":[0,0,1,0,0,0,0,0]}},"blocks":{}},
+"smart_sources:Deleted.md": {"path":"Deleted.md","class_name":"SmartSource"},
+"smart_sources:Deleted.md": null,
+this line is deliberately not valid json
+"smart_sources:Plain.md": {"path":"Plain.md","class_name":"SmartSource","blocks":{}},

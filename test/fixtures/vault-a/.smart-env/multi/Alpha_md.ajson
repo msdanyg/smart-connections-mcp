@@ -1,0 +1,4 @@
+
+"smart_sources:Alpha.md": {"path":"Alpha.md","class_name":"SmartSource","embeddings":{"test-model-8d":{"vec":[1,0,0,0,0,0,0,0],"last_embed":{"hash":"h1","tokens":10}}},"last_import":{"mtime":1700000000000,"size":200},"blocks":{"#---frontmatter---":[1,3],"##Intro":[6,8],"##Detail":[9,11]}},
+"smart_blocks:Alpha.md#---frontmatter---": {"path":null,"key":"Alpha.md#---frontmatter---","class_name":"SmartBlock","lines":[1,3],"embeddings":{"test-model-8d":{"vec":[0,1,0,0,0,0,0,0]}}},
+"smart_blocks:Alpha.md##Intro": {"path":null,"key":"Alpha.md##Intro","class_name":"SmartBlock","lines":[6,8],"embeddings":{"test-model-8d":{"vec":[0.8,0.6,0,0,0,0,0,0]}}},

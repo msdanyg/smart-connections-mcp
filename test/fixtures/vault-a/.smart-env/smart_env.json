@@ -1,0 +1,15 @@
+{
+  "is_obsidian_vault": true,
+  "smart_blocks": { "embed_blocks": true, "min_chars": 10 },
+  "smart_sources": {
+    "min_chars": 10,
+    "embed_model": {
+      "adapter": "transformers",
+      "transformers": { "model_key": "test-model-8d" },
+      "test-model-8d": {}
+    },
+    "excluded_headings": "",
+    "file_exclusions": "",
+    "folder_exclusions": ""
+  }
+}
