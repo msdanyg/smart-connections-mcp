@@ -44,25 +44,26 @@ describe('Embedder', () => {
     expect(warnings[0]).toContain('parity');
   });
 
-  it('retries with truncated text when the extractor overflows on long input', async () => {
-    const seen: number[] = [];
+  it('truncates over-limit inputs before embedding', async () => {
+    const received: string[] = [];
     const factory: PipelineFactory = async () => async (text: string) => {
-      seen.push(text.length);
-      if (text.length > 1500) throw new Error('position embedding overflow');
+      received.push(text);
       return { data: Float32Array.from([1, 0]) };
     };
     const embed = await new Embedder(factory).getEmbedFn('org/m');
-    const longText = 'a'.repeat(5000);
-    expect(await embed(longText)).toEqual([1, 0]);
-    expect(seen).toEqual([5000, 1500]); // first call overflows, retry truncates
+    await embed('x'.repeat(5000));
+    expect(received[0].length).toBe(1500);
   });
 
-  it('still throws when even the truncated retry fails', async () => {
-    const factory: PipelineFactory = async () => async () => {
-      throw new Error('model totally broken');
+  it('passes short inputs through unmodified', async () => {
+    const received: string[] = [];
+    const factory: PipelineFactory = async () => async (text: string) => {
+      received.push(text);
+      return { data: Float32Array.from([1, 0]) };
     };
     const embed = await new Embedder(factory).getEmbedFn('org/m');
-    await expect(embed('a'.repeat(5000))).rejects.toThrow('model totally broken');
+    await embed('short query');
+    expect(received[0]).toBe('short query');
   });
 
   it('throws EmbedUnavailableError when nothing loads, and retries next call', async () => {

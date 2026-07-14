@@ -26,15 +26,10 @@ const defaultFactory: PipelineFactory = async (modelId, opts) => {
 
 const PARITY_WARN_THRESHOLD = 0.99;
 
-// Some tokenizer configs (e.g. TaylorAI/bge-micro-v2's tokenizer_config.json) leave
-// model_max_length unset, so transformers.js's `truncation: true` never actually engages —
-// it falls back to that missing value, i.e. no cap. Text longer than the model's real,
-// fixed position-embedding table (e.g. 512 tokens for small BERT-family models) then
-// overflows and onnxruntime throws. This bites the parity check in particular, since it
-// samples a whole raw note (Vault.paritySample), which can run to thousands of tokens.
-// Retry once with a conservative character-based truncation rather than failing the
-// entire model load over a single oversized input.
-const TRUNCATE_RETRY_CHARS = 1500;
+// ~375 tokens of English prose — safely under the 512-token position limit of
+// small embedding models whose tokenizers ship without a usable model_max_length
+// (TaylorAI/bge-micro-v2 crashes onnxruntime on longer inputs).
+const EMBED_MAX_CHARS = 1500;
 
 export class Embedder {
   private factory: PipelineFactory;
@@ -77,17 +72,16 @@ export class Embedder {
           continue;
         }
         const embed: EmbedFn = async (text) => {
-          try {
-            const out = await extractor(text, { pooling: 'mean', normalize: true });
-            return Array.from(out.data as Float32Array);
-          } catch (e) {
-            if (text.length <= TRUNCATE_RETRY_CHARS) throw e;
-            const out = await extractor(text.slice(0, TRUNCATE_RETRY_CHARS), {
-              pooling: 'mean',
-              normalize: true,
-            });
-            return Array.from(out.data as Float32Array);
+          let input = text;
+          if (input.length > EMBED_MAX_CHARS) {
+            console.error(
+              `[embedder] input truncated from ${input.length} to ${EMBED_MAX_CHARS} chars for ${modelId} ` +
+                `(small embedding models cap out near 512 tokens)`,
+            );
+            input = input.slice(0, EMBED_MAX_CHARS);
           }
+          const out = await extractor(input, { pooling: 'mean', normalize: true });
+          return Array.from(out.data as Float32Array);
         };
         if (parity) {
           let computed: number[];
