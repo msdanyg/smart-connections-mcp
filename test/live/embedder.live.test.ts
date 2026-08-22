@@ -55,3 +55,31 @@ describe('live embedder (downloads real model)', () => {
     }
   }, 300_000);
 });
+
+describe('live embedder — long inputs (issue #10)', () => {
+  it('token-truncates non-English text past 512 tokens instead of crashing onnxruntime', async () => {
+    const embed = await new Embedder().getEmbedFn(MODEL);
+    // bge-micro-v2's tokenizer_config ships model_max_length = 1e30; 1,500 chars of
+    // German is ~560 WordPiece tokens, past the model's 512 position embeddings.
+    const de = 'Die Geschäftsführung überprüft die Wirtschaftlichkeitsberechnung der Straßenbahnhaltestelle. ';
+    const long = de.repeat(40); // ~3,700 chars
+    const v = await embed(long);
+    expect(v.length).toBe(384);
+    expect(Math.sqrt(v.reduce((s, x) => s + x * x, 0))).toBeCloseTo(1, 3);
+    // Truncation is at the token level: the first 512 tokens fully determine the vector.
+    const head = await embed(de.repeat(8)); // ~300 tokens — a strict prefix, so NOT identical
+    expect(cosineSimilarity(v, head)).toBeGreaterThan(0.9);
+  }, 300_000);
+
+  it('survives a parity check against a long stored note', async () => {
+    const embedder = new Embedder();
+    const embed = await embedder.getEmbedFn(MODEL);
+    const text = 'Über die Straße gingen die Fußgänger zur Bäckerei. '.repeat(60); // ~3,000 chars
+    const stored = await embed(text);
+    const warnings: string[] = [];
+    const fresh = new Embedder();
+    const embed2 = await fresh.getEmbedFn(MODEL, { text, vec: stored }, (m) => warnings.push(m));
+    expect((await embed2('Bäckerei')).length).toBe(384);
+    expect(warnings).toEqual([]);
+  }, 300_000);
+});

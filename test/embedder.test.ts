@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Embedder, type PipelineFactory } from '../src/embedder.js';
+import { Embedder, EMBED_MAX_CHARS, clampTokenizerToModel, type PipelineFactory } from '../src/embedder.js';
 import { EmbedUnavailableError } from '../src/errors.js';
 
 const okExtractor = (vec: number[]) => async () => ({ data: Float32Array.from(vec) });
@@ -44,15 +44,15 @@ describe('Embedder', () => {
     expect(warnings[0]).toContain('parity');
   });
 
-  it('truncates over-limit inputs before embedding', async () => {
+  it('guards against pathological input sizes before tokenization', async () => {
     const received: string[] = [];
     const factory: PipelineFactory = async () => async (text: string) => {
       received.push(text);
       return { data: Float32Array.from([1, 0]) };
     };
     const embed = await new Embedder(factory).getEmbedFn('org/m');
-    await embed('x'.repeat(5000));
-    expect(received[0].length).toBe(1500);
+    await embed('x'.repeat(EMBED_MAX_CHARS * 3));
+    expect(received[0].length).toBe(EMBED_MAX_CHARS);
   });
 
   it('passes short inputs through unmodified', async () => {
@@ -77,5 +77,37 @@ describe('Embedder', () => {
     const firstRound = attempts;
     await expect(embedder.getEmbedFn('org/m')).rejects.toThrow(EmbedUnavailableError);
     expect(attempts).toBe(firstRound * 2); // cache evicted on failure
+  });
+});
+
+describe('clampTokenizerToModel', () => {
+  // Issue #10: TaylorAI/bge-micro-v2 ships model_max_length = 1e30 in its tokenizer
+  // config, so transformers.js never truncates and onnxruntime crashes past 512
+  // positions. The model's own config.json knows the real limit.
+  const fake = (tokenizerMax: number | undefined, modelMax: unknown) => {
+    class Tok {
+      get model_max_length() {
+        return tokenizerMax ?? Infinity;
+      }
+    }
+    return { tokenizer: new Tok(), model: { config: { max_position_embeddings: modelMax } } };
+  };
+
+  it('caps an unusable tokenizer limit at the model position limit', () => {
+    const p = fake(1e30, 512);
+    expect(clampTokenizerToModel(p)).toBe(512);
+    expect(p.tokenizer.model_max_length).toBe(512);
+  });
+
+  it('leaves a tokenizer limit that is already tighter than the model alone', () => {
+    const p = fake(512, 514);
+    expect(clampTokenizerToModel(p)).toBe(512);
+    expect(p.tokenizer.model_max_length).toBe(512);
+  });
+
+  it('does nothing when the model config has no position limit', () => {
+    const p = fake(1e30, undefined);
+    expect(clampTokenizerToModel(p)).toBeUndefined();
+    expect(p.tokenizer.model_max_length).toBe(1e30);
   });
 });

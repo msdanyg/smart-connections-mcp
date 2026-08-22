@@ -65,9 +65,9 @@ embeds your query with the *same model* your vault used (downloaded once,
 ~25MB, runs locally via transformers.js). Results are ranked by cosine
 similarity. Edits you make in Obsidian are picked up automatically.
 
-If the embedding model can't load (e.g. no network on very first run), search
-degrades to literal keyword matching and says so explicitly
-(`"mode": "keyword-fallback"`). When only some vaults fall back, `mode` stays
+If the embedding model can't load (e.g. no network on very first run), or a vault
+has no embeddings yet, search degrades to literal keyword matching and says so
+explicitly (`"mode": "keyword-fallback"` plus a `warning` naming the cause). When only some vaults fall back, `mode` stays
 `"semantic"`, those rows carry `"match": "keyword"`, and they always rank
 after the true semantic rows.
 

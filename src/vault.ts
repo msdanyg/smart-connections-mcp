@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { blockNotePath, createVaultData, isFrontmatterBlock, parseAjson } from './ajson-loader.js';
 import { BlockNotFoundError, NoteNotFoundError } from './errors.js';
 import { resolveInsideVault } from './paths.js';
-import type { SmartEnvConfig, VaultData } from './types.js';
+import type { EmbeddingData, SmartEnvConfig, VaultData } from './types.js';
 import { VectorIndex } from './vector-index.js';
 
 const RELOAD_THROTTLE_MS = 2000;
@@ -30,7 +30,9 @@ function extractModelKey(config: SmartEnvConfig): string {
 export class Vault {
   readonly name: string;
   readonly path: string;
-  readonly modelKey: string;
+  /** Model key from smart_env.json — may lag behind the data (see reconcileModelKey). */
+  readonly declaredModelKey: string;
+  private currentModelKey: string;
   data: VaultData;
   index: VectorIndex;
   private fileStates = new Map<string, string>(); // filename -> "mtimeMs:size"
@@ -39,9 +41,15 @@ export class Vault {
   private constructor(vaultPath: string, name: string, modelKey: string) {
     this.path = vaultPath;
     this.name = name;
-    this.modelKey = modelKey;
+    this.declaredModelKey = modelKey;
+    this.currentModelKey = modelKey;
     this.data = createVaultData();
     this.index = new VectorIndex(1);
+  }
+
+  /** The key whose vectors are actually indexed and used for query embedding. */
+  get modelKey(): string {
+    return this.currentModelKey;
   }
 
   static load(vaultPath: string, name: string): Vault {
@@ -86,7 +94,42 @@ export class Vault {
     this.rebuildIndex();
   }
 
+  /**
+   * smart_env.json can lag behind the data: switching the embedding model in
+   * Smart Connections re-embeds every .ajson under the new key but can leave the
+   * old `model_key` in config, after which every vector lookup misses and search
+   * silently returns nothing. Trust the data — keep the declared key while it has
+   * any vectors, otherwise adopt the key that actually carries the embeddings.
+   */
+  private reconcileModelKey(): void {
+    const counts = new Map<string, number>();
+    const tally = (embeddings?: Record<string, EmbeddingData>): void => {
+      if (!embeddings) return;
+      for (const [key, data] of Object.entries(embeddings)) {
+        if (data?.vec?.length) counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    };
+    for (const s of this.data.sources.values()) tally(s.embeddings);
+    for (const b of this.data.blocks.values()) tally(b.embeddings);
+
+    let effective = this.declaredModelKey;
+    if (!counts.get(this.declaredModelKey)) {
+      let bestCount = 0;
+      for (const [key, count] of counts) {
+        if (count > bestCount) { effective = key; bestCount = count; }
+      }
+      if (bestCount > 0 && effective !== this.currentModelKey) {
+        console.error(
+          `[${this.name}] smart_env.json declares "${this.declaredModelKey}" but the embeddings use ` +
+            `"${effective}" (${bestCount} vectors) — trusting the data.`,
+        );
+      }
+    }
+    this.currentModelKey = effective;
+  }
+
   private rebuildIndex(): void {
+    this.reconcileModelKey();
     let dim = 0;
     for (const s of this.data.sources.values()) {
       const v = s.embeddings?.[this.modelKey]?.vec;
@@ -179,13 +222,21 @@ export class Vault {
     return undefined;
   }
 
-  stats(): { notes: number; blocks: number; indexed: number; embeddingDim: number; modelKey: string } {
+  stats(): {
+    notes: number;
+    blocks: number;
+    indexed: number;
+    embeddingDim: number;
+    modelKey: string;
+    declaredModelKey?: string;
+  } {
     return {
       notes: this.data.sources.size,
       blocks: this.data.blocks.size,
       indexed: this.index.size,
       embeddingDim: this.index.dim,
       modelKey: this.modelKey,
+      ...(this.modelKey !== this.declaredModelKey ? { declaredModelKey: this.declaredModelKey } : {}),
     };
   }
 }

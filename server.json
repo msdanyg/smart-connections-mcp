@@ -6,12 +6,12 @@
     "url": "https://github.com/msdanyg/smart-connections-mcp",
     "source": "github"
   },
-  "version": "2.0.0",
+  "version": "2.0.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "smart-connections-mcp",
-      "version": "2.0.0",
+      "version": "2.0.1",
       "transport": {
         "type": "stdio"
       },

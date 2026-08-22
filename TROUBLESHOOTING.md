@@ -3,15 +3,30 @@
 ## `"mode": "keyword-fallback"` in search results
 
 `search_notes` returned results, but the response says `"mode": "keyword-fallback"`
-instead of `"mode": "semantic"`. This means the local embedding model couldn't be
-loaded, so the server fell back to literal keyword matching and told you so
-explicitly (rather than silently degrading).
+instead of `"mode": "semantic"`. The server fell back to literal keyword matching
+and told you so explicitly (rather than silently degrading). The `warning` field
+says which of these happened:
 
-**Fix**: the model (~25MB) downloads from Hugging Face on first use and is then
-cached locally forever. Check your network connection once — if the machine had
-no internet on the very first run, the download never completed. Restart the
-server (or Claude Desktop) with network access and it will retry the download;
-subsequent runs work fully offline.
+- **`semantic search unavailable for <vault>`** — the local embedding model
+  couldn't be loaded. The model (~25MB) downloads from Hugging Face on first use
+  and is then cached locally forever. Check your network connection once — if the
+  machine had no internet on the very first run, the download never completed.
+  Restart the server (or Claude Desktop) with network access and it will retry
+  the download; subsequent runs work fully offline.
+- **`no vectors indexed for model "<key>"`** — the vault loaded but contains no
+  embeddings for any model. Open the vault in Obsidian and let Smart Connections
+  finish embedding, then search again (the server reloads automatically).
+  `get_stats` shows the `indexed` count per vault.
+
+## `get_stats` shows a different `modelKey` than my `smart_env.json`
+
+Smart Connections can leave the old `model_key` in `.smart-env/smart_env.json`
+after you switch embedding models, while every `.ajson` file is re-embedded under
+the new one. When the declared model has no vectors at all, the server trusts the
+data: it indexes the model the embeddings actually use, reports it as `modelKey`,
+keeps the config value as `declaredModelKey`, and logs a one-line notice to
+stderr. Nothing to fix on your side — re-saving the model setting in Smart
+Connections makes the two agree again.
 
 ## A vault shows `"status": "error"` in `list_vaults`
 
@@ -26,11 +41,12 @@ that vault's Smart Connections data couldn't be loaded. Usually one of:
 
 ## Long queries get truncated
 
-Queries longer than ~1500 characters are truncated before being embedded (small
-embedding models cap out near 512 tokens); the server logs a notice to stderr
-when this happens. If you're pasting a long passage as a "query," keep it short
-and specific instead — semantic search works better on a focused question than
-a wall of text anyway.
+Queries are truncated to the embedding model's token window before being embedded
+(512 tokens for the small models Smart Connections ships with — roughly 2,000
+characters of English, noticeably fewer for German, CJK, or code). Truncation
+happens at the token level, so non-English text can't overflow the model. If
+you're pasting a long passage as a "query," keep it short and specific instead —
+semantic search works better on a focused question than a wall of text anyway.
 
 ## Server not appearing in Claude Desktop
 

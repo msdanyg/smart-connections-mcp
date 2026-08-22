@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.1 — 2026-08-21
+
+### Fixed
+- **Non-English text no longer crashes the embedder** (#10). Inputs were cut to
+  1,500 characters, but `TaylorAI/bge-micro-v2` ships a placeholder
+  `model_max_length`, so 1,500 chars of German (~560 tokens) overflowed its 512
+  position embeddings, onnxruntime threw, and `search_notes` silently dropped to
+  `keyword-fallback`. The tokenizer is now capped at the model's real
+  `max_position_embeddings`, so truncation happens at the token level for any
+  language — including the parity check, which embeds a full stored note.
+- **Stale `model_key` in `smart_env.json` no longer empties the index** (#9).
+  Switching models in Smart Connections can re-embed every `.ajson` under the
+  new key while the config keeps the old one; every vector lookup then missed
+  and search returned `[]` in `"mode": "semantic"`. The server now trusts the
+  data when the declared model has no vectors, logs the override, and reports
+  the config value as `declaredModelKey` in `get_stats` / `list_vaults`.
+- A vault with **no vectors indexed** now falls back to keyword matching with an
+  explicit warning instead of returning an empty semantic result.
+
 ## 2.0.0 — 2026-07-13
 
 ### Added

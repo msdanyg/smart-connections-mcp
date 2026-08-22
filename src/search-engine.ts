@@ -45,6 +45,16 @@ export class SearchEngine {
 
     for (const v of vaults) {
       v.maybeReload();
+      if (v.index.size === 0) {
+        // Nothing to rank against: a semantic pass would return [] and look healthy.
+        warnings.push(
+          `${v.name}: no vectors indexed for model "${v.modelKey}" — Smart Connections may not have ` +
+            `finished embedding this vault (check get_stats)`,
+        );
+        fallbackVaults.push(v.name);
+        results.push(...this.keywordSearch(v, query, limit));
+        continue;
+      }
       try {
         const embed = await this.embedder.getEmbedFn(v.modelKey, v.paritySample(), (m) =>
           warnings.push(`${v.name}: ${m}`),
@@ -66,7 +76,7 @@ export class SearchEngine {
     const allFellBack = fallbackVaults.length === vaults.length && vaults.length > 0;
     if (fallbackVaults.length > 0) {
       warnings.push(
-        `semantic model unavailable for ${fallbackVaults.join(', ')} — used literal keyword matching there ` +
+        `semantic search unavailable for ${fallbackVaults.join(', ')} — used literal keyword matching there ` +
           `(scores are match counts, not cosine similarity)`,
       );
     }

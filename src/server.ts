@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { SearchEngine } from './search-engine.js';
 
 export function buildServer(engine: SearchEngine): McpServer {
-  const server = new McpServer({ name: 'smart-connections-mcp', version: '2.0.0' });
+  const server = new McpServer({ name: 'smart-connections-mcp', version: '2.0.1' });
 
   const json = (value: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],

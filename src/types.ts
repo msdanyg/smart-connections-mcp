@@ -79,4 +79,6 @@ export interface VaultInfo {
   indexed?: number;
   embeddingDim?: number;
   modelKey?: string;
+  /** present only when smart_env.json's model_key was overridden by the data (see Vault.reconcileModelKey) */
+  declaredModelKey?: string;
 }

@@ -181,3 +181,32 @@ describe('stats and vault listing', () => {
     expect(s.totals.notes).toBe(5); // 4 + 1
   });
 });
+
+describe('search — empty index (issue #9)', () => {
+  it('warns and falls back to keyword matching when a vault has no vectors indexed', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'scmcp-empty-'));
+    try {
+      fs.cpSync(FIXTURE_A, tmp, { recursive: true });
+      const multi = path.join(tmp, '.smart-env/multi');
+      for (const f of fs.readdirSync(multi)) {
+        const lines = fs.readFileSync(path.join(multi, f), 'utf-8').split('\n').map((line) => {
+          const m = /^("[^"]+"): (\{.*\}),?$/.exec(line.trim());
+          if (!m) return line;
+          const obj = JSON.parse(m[2]) as { embeddings?: unknown };
+          delete obj.embeddings;
+          return `${m[1]}: ${JSON.stringify(obj)},`;
+        });
+        fs.writeFileSync(path.join(multi, f), lines.join('\n'));
+      }
+      const eng = new SearchEngine(VaultRegistry.fromPaths([tmp]), fakeEmbedder);
+      expect(eng.getStats()).toMatchObject({ totals: { indexed: 0 } });
+      const res = await eng.search('apples');
+      expect(res.mode).toBe('keyword-fallback');
+      expect(res.warning).toMatch(/no vectors indexed for model "test-model-8d"/);
+      expect(res.results[0].path).toBe('Alpha.md');
+      expect(res.results[0].match).toBe('keyword');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});

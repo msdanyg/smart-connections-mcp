@@ -1,6 +1,6 @@
 {
   "name": "smart-connections-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "mcpName": "io.github.msdanyg/smart-connections-mcp",
   "description": "MCP server for true local semantic search over Obsidian vaults using Smart Connections embeddings — multi-vault, block-level retrieval, no cloud calls",
   "type": "module",
